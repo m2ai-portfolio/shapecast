@@ -355,7 +355,7 @@ async function runInference(kind, requestText) {
       showError(
         imageLimits
           ? 'Nothing to build from: add a usable photo or write a brief.'
-          : 'This viewer cannot send photos to Claude, and the brief is empty. Write a brief, or open the artifact at claude.ai in a browser or the Claude mobile app to build from photos.',
+          : 'Photos cannot be sent to Claude from this artifact yet (the runtime reports no image support for your account). Describe the object in the brief instead: what it is, its key dimensions, and one scale reference.',
       );
       state.inference = null;
       setBusy(false, '');
@@ -554,6 +554,7 @@ function makeSaveCtl(project) {
     },
   });
   if (!canPersist()) ctl.setAutosave(false);
+  $('saveState').textContent = canPersist() ? 'saved' : 'local only';
   return ctl;
 }
 async function loadProjectList() {
@@ -742,7 +743,8 @@ async function init() {
   if (caps.sample) {
     const lim = await caps.sample.limits().catch(() => null);
     imageLimits = lim?.images ?? null;
-    if (!imageLimits) note('This view cannot send photos to Claude; the brief alone is used.');
+    if (!imageLimits)
+      note('Photos cannot be sent to Claude from this artifact yet; the brief alone is used.');
     else
       /** @type {HTMLInputElement} */ ($('photoInput')).accept = imageLimits.mediaTypes.join(',');
     setBusy(false, '');

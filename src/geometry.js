@@ -211,11 +211,155 @@ function wedge(b, size) {
   for (let i = 0; i < d.length; i += 9) b.push(v(i, 0), v(i, 6), v(i, 3));
 }
 
-// Curved generators (cylinder, sphere, torus, lathe) are added in Task 4.
+function circle(n) {
+  const c = [];
+  for (let i = 0; i < n; i++) {
+    const a = (2 * Math.PI * i) / n;
+    c.push([Math.cos(a), Math.sin(a)]);
+  }
+  return c;
+}
+
+function cylinder(b, rb, rt, h, n) {
+  const c = circle(n),
+    z0 = -h / 2,
+    z1 = h / 2;
+  const B = c.map((p) => [rb * p[0], rb * p[1], z0]),
+    bot = [0, 0, z0],
+    top = [0, 0, z1];
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    b.push(bot, B[j], B[i]);
+  }
+  if (rt > 0) {
+    const T = c.map((p) => [rt * p[0], rt * p[1], z1]);
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      b.push(B[i], B[j], T[j]);
+      b.push(B[i], T[j], T[i]);
+      b.push(top, T[i], T[j]);
+    }
+  } else
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      b.push(B[i], B[j], top);
+    }
+}
+
+function sphere(b, r, n) {
+  const stacks = Math.max(3, Math.floor(n / 2));
+  const ring = (s) => {
+    const phi = (Math.PI * s) / stacks,
+      rr = r * Math.sin(phi),
+      z = r * Math.cos(phi);
+    return circle(n).map((p) => [rr * p[0], rr * p[1], z]);
+  };
+  const N = [0, 0, r],
+    S = [0, 0, -r];
+  let prev = ring(1);
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    b.push(N, prev[i], prev[j]);
+  }
+  for (let s = 2; s < stacks; s++) {
+    const cur = ring(s);
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      b.push(prev[i], cur[i], cur[j]);
+      b.push(prev[i], cur[j], prev[j]);
+    }
+    prev = cur;
+  }
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    b.push(S, prev[j], prev[i]);
+  }
+}
+
+function torus(b, R, r, n) {
+  const m = Math.max(8, Math.floor(n / 2));
+  const P = (i, j) => {
+    const u = (2 * Math.PI * (i % n)) / n,
+      v = (2 * Math.PI * (j % m)) / m,
+      w = R + r * Math.cos(v);
+    return [w * Math.cos(u), w * Math.sin(u), r * Math.sin(v)];
+  };
+  for (let i = 0; i < n; i++)
+    for (let j = 0; j < m; j++) {
+      const a = P(i, j),
+        q = P(i + 1, j),
+        c = P(i + 1, j + 1),
+        d = P(i, j + 1);
+      b.push(a, q, c);
+      b.push(a, c, d);
+    }
+}
+
+function lathe(b, profile, n) {
+  const c = circle(n),
+    m = profile.length;
+  for (let i = 0; i < m; i++) {
+    const r0 = profile[i][0],
+      z0 = profile[i][1],
+      r1 = profile[(i + 1) % m][0],
+      z1 = profile[(i + 1) % m][1];
+    if (r0 === 0 && r1 === 0) continue;
+    for (let j = 0; j < n; j++) {
+      const k = (j + 1) % n;
+      const A = [r0 * c[j][0], r0 * c[j][1], z0],
+        B = [r0 * c[k][0], r0 * c[k][1], z0],
+        C = [r1 * c[k][0], r1 * c[k][1], z1],
+        D = [r1 * c[j][0], r1 * c[j][1], z1];
+      if (r0 > 0) b.push(A, B, C);
+      if (r1 > 0) b.push(A, C, D);
+    }
+  }
+}
+
+export function partVolume(p) {
+  switch (p.type) {
+    case 'box':
+      return p.size[0] * p.size[1] * p.size[2];
+    case 'wedge':
+      return (p.size[0] * p.size[1] * p.size[2]) / 2;
+    case 'cylinder': {
+      const rt = p.radiusTop ?? p.radius;
+      return (Math.PI * p.height * (p.radius ** 2 + p.radius * rt + rt ** 2)) / 3;
+    }
+    case 'cone':
+      return (Math.PI * p.radius ** 2 * p.height) / 3;
+    case 'sphere':
+      return (4 / 3) * Math.PI * p.radius ** 3;
+    case 'torus':
+      return 2 * Math.PI ** 2 * p.radius * p.tube ** 2;
+    case 'extrude':
+      return Math.abs(signedArea(p.profile)) * p.height;
+    case 'lathe': {
+      let s = 0;
+      const m = p.profile.length;
+      for (let i = 0; i < m; i++) {
+        const r0 = p.profile[i][0],
+          z0 = p.profile[i][1],
+          r1 = p.profile[(i + 1) % m][0],
+          z1 = p.profile[(i + 1) % m][1];
+        s += (r0 * z1 - r1 * z0) * (r0 + r1);
+      }
+      return (Math.abs(s) * Math.PI) / 3;
+    }
+    default:
+      return 0;
+  }
+}
+
 const GENERATORS = {
   box: (b, p) => box(b, p.size),
   wedge: (b, p) => wedge(b, p.size),
   extrude: (b, p) => extrude(b, p.profile, p.height),
+  cylinder: (b, p, n) => cylinder(b, p.radius, p.radiusTop ?? p.radius, p.height, n),
+  cone: (b, p, n) => cylinder(b, p.radius, 0, p.height, n),
+  sphere: (b, p, n) => sphere(b, p.radius, n),
+  torus: (b, p, n) => torus(b, p.radius, p.tube, n),
+  lathe: (b, p, n) => lathe(b, p.profile, n),
 };
 
 export function localTriangles(part) {
@@ -234,7 +378,11 @@ export function partToTriangles(part) {
 
 export function meshChecks(d) {
   const errors = [];
-  const key = (i) => `${d[i].toFixed(6)},${d[i + 1].toFixed(6)},${d[i + 2].toFixed(6)}`;
+  const q = (v) => {
+    const r = Math.round(v * 1e6) / 1e6;
+    return r === 0 ? '0' : String(r); // fold -0 and 1e-15 into one key
+  };
+  const key = (i) => `${q(d[i])},${q(d[i + 1])},${q(d[i + 2])}`;
   const directed = new Map(),
     star = new Map();
   let zero = 0;

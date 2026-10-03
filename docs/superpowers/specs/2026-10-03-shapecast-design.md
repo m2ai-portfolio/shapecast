@@ -1,6 +1,6 @@
 # ShapeCast design spec
 
-Date: 2026-10-03. Owner: Matthew. Status: v3, revised after Codex checkmate round 2.
+Date: 2026-10-03. Owner: Matthew. Status: v4, revised after Codex checkmate round 3.
 
 ## Goal
 
@@ -125,7 +125,7 @@ world-space triangles, so what is shown is what is exported.
 ### Validator rules (all enforced before any geometry is allocated)
 
 - Top level: `name` string 1-80 chars; `units` exactly `"mm"`; `parts` array 1-200 entries;
-  `assumptions` array of strings (may be empty); `print.orientation` in `flat|angled`;
+  `assumptions` array of 0-20 strings, each 1-300 characters; `print.orientation` in `flat|angled`;
   `print.suggestedLayerUm` one of 10, 30, 50, 100.
 - Part: `id` string 1-40 chars matching `^[a-z0-9_-]+$`, unique within the list; `type` in
   the table above; `role` exactly `"add"` (`"sub"` is rejected with "subtractive parts arrive
@@ -138,12 +138,15 @@ world-space triangles, so what is shown is what is exported.
   points equal; no self-intersection (O(n^2) segment test, adjacent edges excluded);
   non-zero signed area. Lathe profiles additionally require r >= 0 for every point and at
   least one point with r > 0.
-- Lathe axis topology: for every profile vertex with r = 0 whose two neighbours both have
-  r > 0 (an isolated axis touch), the neighbours' z values must lie on the same side of the
-  vertex's z (both >= or both <=). A vertex with one neighbour above and one below is an
-  hourglass pinch that revolves into a non-manifold point and is rejected with "profile
-  pinches at the axis at point i". Rejection fixture: `[[0,0],[10,-10],[20,0],[10,10]]`.
-  Accepted fixtures: sphere-like `[[0,-10],[10,0],[0,10]]`, cylinder `[[0,0],[10,0],[10,5],[0,5]]`.
+- Lathe axis topology: every profile vertex with r = 0 must have at least one neighbour with
+  r = 0, so the polygon meets the axis only along axis edges, never at an isolated point. An
+  isolated axis vertex (both neighbours r > 0) revolves into two fans meeting at a single
+  vertex, which is non-manifold regardless of which side the neighbours lie on, and is
+  rejected with "profile touches the axis at a single point (point i); extend it along the
+  axis". Rejection fixtures: hourglass `[[0,0],[10,-10],[20,0],[10,10]]` and same-side cone
+  pair `[[0,0],[10,10],[20,10]]`. Accepted fixtures: sphere-like `[[0,-10],[10,0],[0,10]]`
+  (the two axis vertices share the axis edge), cylinder `[[0,0],[10,0],[10,5],[0,5]]`, cone
+  `[[0,0],[10,0],[0,10]]`.
 - Triangle budget: the validator computes each part's triangle count from its type and
   `segments`/profile size (closed-form, no allocation) and rejects a list whose total exceeds
   1,000,000 triangles.
@@ -175,9 +178,13 @@ Each part produces one closed, edge-manifold triangle shell with outward normals
   no triangle has zero area, signed volume > 0, and **vertex-link manifoldness**: for every
   vertex, the triangles incident to it form exactly one closed fan cycle (two or more cycles
   mean a pinched vertex). Tests run `meshChecks` on every type at several parameterisations,
-  including `radiusTop = 0`, a thin disk, a profile with a concave notch, the sphere-like and
-  cylinder lathe profiles above, and confirm that the hourglass profile is rejected by the
-  validator before generation and, if forced through, fails the vertex-link check.
+  including `radiusTop = 0`, a thin disk, a profile with a concave notch, the sphere-like,
+  cylinder and cone lathe profiles above, and confirm that both rejection profiles are refused
+  by the validator before generation and, if forced through, fail the vertex-link check.
+- **Runtime gate, not only tests:** `meshChecks` runs on every shell the page generates, on
+  every change. A failing shell marks its part red ("geometry failed manifold check: id"),
+  the previous good part list stays rendered and stored, and Export is disabled until the
+  failure is resolved. This is the backstop for any validator gap.
 
 ## Claude prompt contract
 
@@ -232,7 +239,7 @@ digits align. Light and dark themes via tokens per the artifact page contract.
 |---|---|---|
 | Fits build volume | world bounding box within 218.88 x 122.88 x 250 | red if not; amber "rotate 90 deg about Z fits" when swapped XY fits |
 | Minimum feature | per type: box/wedge min(size); cylinder min(2r, 2*radiusTop if > 0, height); cone min(2r, height); sphere 2r; torus 2*tube; extrude min(height, polygonThickness(profile)); lathe polygonThickness(profile). `polygonThickness` = min distance from any vertex to any non-adjacent edge of the polygon (a conservative lower bound on local wall thickness) | under 0.8 mm red; 0.8 to 1.2 mm amber |
-| Floating parts | Contact graph over parts. An edge exists only where world bounding boxes **interpenetrate** (negative gap of at least 0.01 mm on all three axes); a positive gap of any size is not a connection. Each edge is **confirmed** when both parts are `box` or `wedge` with `rot` entries that are multiples of 90 degrees (their boxes are their true shapes), otherwise **candidate**. Grounded = some part in the component has its lowest z <= 0.01 mm. Component verdicts: not grounded, red "unsupported group: ids"; grounded but reaching the plate only through candidate edges, amber "contact not confirmed: ids"; grounded through confirmed edges, green. Separately, any pair with a positive gap of 0.5 mm or less on every axis is listed amber "near miss: a and b are 0.4 mm apart and will not fuse" | red / amber / green |
+| Floating parts | Contact graph over parts. An edge exists only where world bounding boxes **interpenetrate** (negative gap of at least 0.01 mm on all three axes); a positive gap of any size is not a connection. Each edge is **confirmed** only when both parts are `box` with `rot` entries that are multiples of 90 degrees (the only case where the bounding box is the true shape), otherwise **candidate** (wedges, every curved type, any other rotation). Grounded = some part in the component has its lowest z <= 0.01 mm. Component verdicts: not grounded, red "unsupported group: ids"; grounded but reaching the plate only through candidate edges, amber "contact not confirmed: ids"; grounded through confirmed edges, green. Separately, any pair with a positive gap of 0.5 mm or less on every axis is listed amber "near miss: a and b are 0.4 mm apart and will not fuse" | red / amber / green |
 | Overhang | for `flat` orientation, parts whose lowest z is above 0.01 mm and whose footprint is not covered by a part they are connected to | amber, "needs supports" |
 | Volume | sum of analytic part volumes, labelled "summed primitive volume (upper bound; overlaps counted twice)" | mL, informational |
 | Layers | ceil(height / layer height) for 10, 30, 50, 100 um | count, informational |
@@ -241,7 +248,8 @@ digits align. Light and dark themes via tokens per the artifact page contract.
 Fixtures: suspended two-part group (red); two stacked boxes with a 0.4 mm vertical gap (upper
 box red as unsupported, pair listed as near miss); two boxes 0.6 mm apart (red, no near miss);
 two boxes interpenetrating by 0.5 mm (green); a box and a rotated-45-degree box
-interpenetrating (amber, candidate); a cylinder beside a sphere whose boxes overlap but shells
+interpenetrating (amber, candidate); wedge size [10,10,10] at [0,0,5] with box size [1,1,1]
+at [4,0,8], whose boxes overlap but whose shapes are 6 mm apart (amber, not green); a cylinder beside a sphere whose boxes overlap but shells
 may not (amber); a 0.5 mm disk; a 1.0 mm wall extrude; a model that fits only after rotation.
 
 ## Export
@@ -269,14 +277,20 @@ Capabilities declared: `sample`, `downloads`, `db`, `assets`, `user`.
   - `projects/<projectId>`: `{name, brief, scaleRef, photoAssetIds[], current, currentRevisionId,
     createdAt, updatedAt}`. `current` is at most 120 KiB by the validator's byte budget, so
     this document stays under about 125 KiB.
-  - `projects/<projectId>/revisions/<revisionId>`: `{at, request, partList, assumptions}`,
-    one document per revision, each bounded by the same 120 KiB budget. At most 20 are kept;
-    on the 21st write the oldest (by `at`) is deleted after the new one succeeds.
-  - Before every write the page serialises the document and refuses to send anything over
-    200 KiB (headroom), showing "Project too large to save" and leaving the previous stored
-    copy untouched. Tests: a maximum-size valid project (200 parts at the byte budget, 20
-    revisions) saves and reopens; an oversized list is rejected by the validator before the
-    previous good state is replaced.
+  - `projects/<projectId>/revisions/<revisionId>`: `{at, request, partList}`, one document
+    per revision. `assumptions` are not duplicated; they live inside `partList`. `request` is
+    the user's chat text truncated to 2,000 characters. With the list at most 120 KiB and
+    the remaining fields under 3 KiB, every revision document stays under 125 KiB. At most
+    20 are kept; on the 21st write the oldest (by `at`) is deleted after the new one succeeds.
+  - A revision is **accepted** (applied to the page) only after its complete revision
+    payload serialises to at most 200 KiB; otherwise the reply is rejected like any
+    validation failure and the previous good state stays. The same 200 KiB serialisation
+    guard runs before every write as a second check, showing "Project too large to save" and
+    leaving the stored copy untouched if it ever trips. Tests: a maximum-size valid project
+    (list at the 120 KiB budget with 20 assumptions of 300 characters, 20 revisions) saves
+    and reopens; a list over budget is rejected before the previous good state is replaced;
+    the duplication case (one box plus a very long assumption) is rejected by the
+    assumption-length rule.
 - Save sequencing: photos upload first (`assets.upload`), then the project doc is written
   with the asset ids. A photo whose upload fails stays in memory as a **pending upload**.
   The document write still proceeds without it, but the project stays `dirty` while any

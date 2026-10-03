@@ -1,6 +1,6 @@
 # ShapeCast design spec
 
-Date: 2026-10-03. Owner: Matthew. Status: v5, revised after Codex checkmate round 4.
+Date: 2026-10-03. Owner: Matthew. Status: v6, revised after Codex checkmate round 5 (F15 fix, not yet re-reviewed by Codex).
 
 ## Goal
 
@@ -308,16 +308,25 @@ Capabilities declared: `sample`, `downloads`, `db`, `assets`, `user`.
   with the asset ids. A photo whose upload fails stays in memory as a **pending upload**.
   The document write still proceeds without it, but the project stays `dirty` while any
   pending upload exists, with "1 photo not uploaded: Retry".
-- Dirty state: every change, including a pending upload, sets `dirty`; a debounced (1.5 s)
-  autosave writes when idle, one write at a time; a failed write keeps `dirty`, shows
-  "Not saved, retry", and never discards in-memory state.
+- Change generations: every accepted change to the model, metadata or photo set increments
+  a monotonic `generation` counter on the in-memory project. A save takes an immutable
+  snapshot `{projectId, generation, document, pendingUploads}` at dispatch. On success the
+  page records `savedGeneration = snapshot.generation`; `dirty` is derived as
+  `generation !== savedGeneration || pendingUploads.length > 0`, never cleared directly, so a
+  save that completes after a newer edit leaves the project dirty and queues another save.
+  A debounced (1.5 s) autosave runs one write at a time; a failed write leaves
+  `savedGeneration` unchanged, shows "Not saved, retry", and never discards in-memory state.
+  Tests (fake db and assets with manual resolve): edit during a pending write keeps dirty
+  and triggers a follow-up save; a stale snapshot's success never advances
+  `savedGeneration` past its own generation; two rapid edits produce one write.
 - Switching projects with `dirty` set shows an inline choice (Save and switch / Discard /
-  Stay); `confirm()` is never used. "Save and switch" waits for every pending upload and the
-  document write to succeed before switching. If anything fails, the switch is cancelled and
+  Stay); `confirm()` is never used. "Save and switch" drains: it loops saving until `savedGeneration === generation` and
+  `pendingUploads` is empty, with edits disabled while draining, then switches. If anything fails, the switch is cancelled and
   the choice becomes "Retry / Discard the unsaved changes and switch / Stay", naming what
-  failed. Test: one photo upload fails, user chooses Save and switch, switch does not happen,
+  failed. Tests: one photo upload fails, user chooses Save and switch, switch does not happen,
   photo is still in memory; after Retry succeeds, switch proceeds and reopening the project
-  shows the photo.
+  shows the photo; an edit landing during a Save and switch write is included before the
+  switch completes.
 - Conflicts: last write wins. On open, if the stored `updatedAt` is newer than the
   in-memory copy's, the stored copy loads. No merging.
 - The page opens with the most recently updated project if one exists, otherwise an empty

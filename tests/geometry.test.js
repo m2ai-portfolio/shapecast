@@ -10,7 +10,7 @@ import {
 } from '../src/geometry.js';
 
 const part = (p) => ({ id: 'p', pos: [0, 0, 0], rot: [0, 0, 0], role: 'add', ...p });
-const r9 = (v) => Math.round(v * 1e9) / 1e9;
+const r9 = (v) => Math.round(v * 1e9) / 1e9 + 0;
 
 describe('geometry core', () => {
   it('box: 12 triangles, volume 1000 for a 10 mm cube, manifold', () => {

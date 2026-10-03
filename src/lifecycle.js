@@ -1,10 +1,11 @@
 export function createRequestTracker() {
+  // revisionId is a monotonic epoch that never resets, so a token from before A -> B -> A stays stale
   let projectId = null,
     revisionId = 0;
   return {
     setProject(id) {
       projectId = id;
-      revisionId = 0;
+      revisionId++;
     },
     bump() {
       revisionId++;
@@ -39,7 +40,8 @@ export function createSaveController({
     inFlight = null,
     timer = null,
     lastError = null,
-    autosave = true;
+    autosave = true,
+    disposed = false;
   const api = {
     markChanged() {
       generation++;
@@ -77,13 +79,24 @@ export function createSaveController({
         saving: !!inFlight,
         dirty: api.isDirty(),
         error: lastError,
+        disposed,
       };
     },
     setAutosave(v) {
       autosave = v;
     },
+    dispose() {
+      disposed = true;
+      autosave = false;
+      if (timer) {
+        clearTimer(timer);
+        timer = null;
+      }
+    },
   };
-  const notify = () => onChange(api.state());
+  const notify = () => {
+    if (!disposed) onChange(api.state());
+  };
   function schedule() {
     if (timer) clearTimer(timer);
     timer = setTimer(() => {

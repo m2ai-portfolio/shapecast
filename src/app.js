@@ -1,5 +1,4 @@
 import { validatePartList } from './schema.js';
-import { localTriangles, transformTriangles, meshChecks, boundingBox } from './geometry.js';
 import { runPrintChecks } from './printcheck.js';
 import { writeBinaryStl, concatTriangles } from './stl.js';
 import { createRequestTracker, createSaveController } from './lifecycle.js';
@@ -14,6 +13,8 @@ import {
   projectDocument,
   SAMPLE_LIST,
   META,
+  geometryGate,
+  createPartCache,
 } from './model.js';
 import { createViewport } from './viewport.js';
 
@@ -24,6 +25,7 @@ let imageLimits = null,
   viewport = null,
   saveCtl = null;
 const tracker = createRequestTracker();
+const partCache = createPartCache();
 const state = {
   project: null,
   unsavedRevisions: [],
@@ -84,25 +86,8 @@ function render() {
     showError(v.errors[0]);
     return;
   }
-  let anyFailed = false;
-  state.items = list.parts.map((part) => {
-    try {
-      const local = localTriangles(part),
-        mc = meshChecks(local),
-        tris = transformTriangles(local, part.pos, part.rot);
-      if (!mc.ok) anyFailed = true;
-      return { part, tris, bbox: boundingBox(tris), failed: !mc.ok, failure: mc.errors[0] };
-    } catch (e) {
-      anyFailed = true;
-      return {
-        part,
-        tris: new Float64Array(0),
-        bbox: { min: part.pos, max: part.pos, size: [0, 0, 0] },
-        failed: true,
-        failure: e.message,
-      };
-    }
-  });
+  state.items = list.parts.map((part) => partCache.item(part));
+  const anyFailed = state.items.some((it) => it.failed);
   state.result = runPrintChecks(state.items, {
     layerUm: state.layerUm,
     orientation: list.print.orientation,
@@ -276,7 +261,11 @@ function assetIds() {
 function applyList(list, { request = null } = {}) {
   const now = Date.now();
   const rev = request
-    ? { id: newId('r'), doc: { at: now, request: truncateRequest(request), partList: list } }
+    ? {
+        id: newId('r'),
+        projectId: state.project.id,
+        doc: { at: now, request: truncateRequest(request), partList: list },
+      }
     : null;
   const prospective = projectDocument({
     ...state.project,
@@ -288,6 +277,11 @@ function applyList(list, { request = null } = {}) {
   const size = checkDocumentSizes({ projectDoc: prospective, revisionDoc: rev?.doc });
   if (!size.ok) {
     showError(size.error);
+    return false;
+  }
+  const gate = geometryGate(list);
+  if (!gate.ok) {
+    showError(`Rejected, the previous model is kept: ${gate.errors[0]}`);
     return false;
   }
   state.project.current = list;
@@ -389,6 +383,10 @@ async function runInference(kind, requestText) {
     }
     const request =
       kind === 'build' ? `build: ${state.project.brief || 'from photos'}` : requestText;
+    if (token.projectId !== state.project.id) {
+      showError('A result arrived for a different project and was discarded.');
+      return;
+    }
     if (!tracker.isCurrent(token)) {
       state.stale = { list: reply, request };
       $('staleText').textContent =
@@ -493,11 +491,11 @@ async function exportFile(kind) {
 
 // ---------- persistence ----------
 const projectsCol = () => caps.db.doc(`data/users/${uid}/workspace`).collection('projects');
-async function saveProject(_gen) {
-  // synchronous snapshot of the state at this generation
-  const snap = JSON.parse(JSON.stringify({ ...state.project, photos: undefined }));
-  const unsaved = [...state.unsavedRevisions];
-  for (const ph of state.project.photos) {
+async function saveProject(project, ctl) {
+  // synchronous snapshot of this project's state at this generation; never read state.project below
+  const snap = JSON.parse(JSON.stringify({ ...project, photos: undefined }));
+  const unsaved = [...state.unsavedRevisions.filter((r) => r.projectId === project.id)];
+  for (const ph of project.photos) {
     if (ph.assetId || !ph.file) continue;
     try {
       const r = await caps.assets.upload(ph.file);
@@ -507,15 +505,20 @@ async function saveProject(_gen) {
       ph.error = e?.code || 'upload failed';
     }
   }
-  const pending = state.project.photos.filter((p) => !p.assetId).length;
-  saveCtl.setPendingUploads(pending);
-  renderThumbs();
-  const doc = projectDocument({ ...snap, photoAssetIds: assetIds() });
+  const pending = project.photos.filter((p) => !p.assetId).length;
+  ctl.setPendingUploads(pending);
+  if (project === state.project) renderThumbs();
+  const doc = projectDocument({
+    ...snap,
+    photoAssetIds: project.photos.filter((p) => p.assetId).map((p) => p.assetId),
+  });
   const size = checkDocumentSizes({ projectDoc: doc });
   if (!size.ok) throw new Error(size.error);
   await projectsCol().doc(snap.id).set(doc);
   const revCol = projectsCol().doc(snap.id).collection('revisions');
   for (const rev of unsaved) {
+    const revSize = checkDocumentSizes({ revisionDoc: rev.doc });
+    if (!revSize.ok) throw new Error(revSize.error);
     await revCol.doc(rev.id).set(rev.doc);
     state.unsavedRevisions = state.unsavedRevisions.filter((r) => r !== rev);
   }
@@ -523,10 +526,11 @@ async function saveProject(_gen) {
   for (const d of all.docs.slice(0, Math.max(0, all.size - 20))) await revCol.doc(d.id).delete();
   if (pending) throw new Error(`${pending} photo${pending > 1 ? 's' : ''} not uploaded`);
 }
-function makeSaveCtl() {
+function makeSaveCtl(project) {
   const ctl = createSaveController({
-    save: canPersist() ? saveProject : async () => {},
+    save: canPersist() ? () => saveProject(project, ctl) : async () => {},
     onChange: (s) => {
+      if (project !== state.project) return;
       $('saveState').textContent = !canPersist()
         ? 'local only'
         : s.error
@@ -555,6 +559,9 @@ async function loadProjectList() {
   return q.docs;
 }
 function installProject(project) {
+  saveCtl?.dispose();
+  state.inference?.controller.abort();
+  partCache.clear();
   state.project = project;
   state.unsavedRevisions = [];
   state.selectedId = null;
@@ -563,7 +570,7 @@ function installProject(project) {
   $('chatLog').innerHTML = '';
   $('rawReply').textContent = '';
   tracker.setProject(project.id);
-  saveCtl = makeSaveCtl();
+  saveCtl = makeSaveCtl(project);
   /** @type {HTMLSelectElement} */ ($('projectSelect')).value = canPersist() ? project.id : '';
   render();
   viewport?.fit(state.result.bbox);
@@ -742,7 +749,8 @@ async function init() {
     else installProject(state.project);
   } else {
     $('localBanner').classList.remove('hidden');
-    saveCtl = makeSaveCtl();
+    saveCtl?.dispose();
+    saveCtl = makeSaveCtl(state.project);
   }
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

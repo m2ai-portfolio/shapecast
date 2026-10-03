@@ -164,6 +164,16 @@ export function runPrintChecks(items, { layerUm = 50, orientation = 'flat' } = {
     comps.get(r).push(i);
   });
   const grounded = (i) => items[i].bbox.min[2] <= EPS;
+  const sunk = items.map((_, i) => i).filter((i) => items[i].bbox.min[2] < -EPS);
+  let flagged = false;
+  if (sunk.length) {
+    flagged = true;
+    checks.push({
+      id: 'plate:' + sunk.map((i) => items[i].part.id).join(', '),
+      level: 'red',
+      message: `Below the build plate: ${sunk.map((i) => items[i].part.id).join(', ')} (move every part to z >= 0)`,
+    });
+  }
   const confirmedAdj = items.map(() => []),
     adj = items.map(() => []);
   for (const e of edges) {
@@ -185,7 +195,6 @@ export function runPrintChecks(items, { layerUm = 50, orientation = 'flat' } = {
         queue.push(j);
       }
   }
-  let flagged = false;
   const ids = (arr) => arr.map((i) => items[i].part.id).join(', ');
   for (const members of comps.values()) {
     if (!members.some(grounded)) {

@@ -1,4 +1,5 @@
 import { validatePartList } from './schema.js';
+import { localTriangles, transformTriangles, meshChecks, boundingBox } from './geometry.js';
 
 export const FIELDS = {
   box: ['size', 'pos', 'rot'],
@@ -81,6 +82,53 @@ export function projectDocument(p) {
     currentRevisionId: p.currentRevisionId ?? null,
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
+  };
+}
+
+/** Build one render item for a part; a failing shell is marked, never thrown. */
+export function partItem(part) {
+  try {
+    const local = localTriangles(part),
+      mc = meshChecks(local),
+      tris = transformTriangles(local, part.pos, part.rot);
+    return { part, tris, bbox: boundingBox(tris), failed: !mc.ok, failure: mc.errors[0] ?? null };
+  } catch (e) {
+    return {
+      part,
+      tris: new Float64Array(0),
+      bbox: { min: part.pos, max: part.pos, size: [0, 0, 0] },
+      failed: true,
+      failure: e.message,
+    };
+  }
+}
+
+/** Runtime manifold gate: every shell of a prospective list must pass meshChecks before it is accepted. */
+export function geometryGate(list) {
+  const errors = [];
+  for (const part of list.parts) {
+    const it = partItem(part);
+    if (it.failed) errors.push(`${part.id}: geometry failed manifold check (${it.failure})`);
+  }
+  return errors.length ? { ok: false, errors } : { ok: true };
+}
+
+/** Per-part geometry cache keyed by the part's JSON, so re-renders do not regenerate unchanged parts. */
+export function createPartCache(maxEntries = 400) {
+  const map = new Map();
+  return {
+    item(part) {
+      const key = JSON.stringify(part);
+      const hit = map.get(key);
+      if (hit) return hit;
+      const it = partItem(part);
+      if (map.size >= maxEntries) map.delete(map.keys().next().value);
+      map.set(key, it);
+      return it;
+    },
+    clear() {
+      map.clear();
+    },
   };
 }
 

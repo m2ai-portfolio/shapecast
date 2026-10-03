@@ -232,4 +232,61 @@ describe('validatePartList', () => {
     ).toBe(12);
     expect(LIMITS.listBytes).toBe(122880);
   });
+  it('rejects non-simple profiles: touching vertex, T-junction, fold-back spike, repeated vertex, near-axis lathe', () => {
+    const ext = (profile) => {
+      const l = clone(EXAMPLE_LIST);
+      l.parts[1].profile = profile;
+      return validatePartList(l);
+    };
+    expect(
+      ext([
+        [0, 0],
+        [10, 0],
+        [5, 5],
+        [10, 10],
+        [0, 10],
+        [5, 5],
+      ]).ok,
+    ).toBe(false);
+    expect(
+      ext([
+        [0, 0],
+        [10, 0],
+        [10, 10],
+        [6, 10],
+        [6, 0],
+        [4, 0],
+        [4, 10],
+        [0, 10],
+      ]).ok,
+    ).toBe(false);
+    expect(
+      ext([
+        [0, 0],
+        [10, 0],
+        [10, 10],
+        [10, 5],
+        [0, 10],
+      ]).ok,
+    ).toBe(false);
+    expect(
+      ext([
+        [0, 0],
+        [10, 0],
+        [10, 10],
+        [2, 10],
+        [0, 0.5],
+      ]).ok,
+    ).toBe(true);
+    expect(
+      validatePartList(
+        lathe([
+          [0, 0],
+          [1e-7, 0],
+          [1e-7, 5],
+          [0, 5],
+        ]),
+      ).errors[0],
+    ).toMatch(/r must be 0 or at least 0.01/);
+  });
 });

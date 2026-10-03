@@ -658,13 +658,25 @@ function signedArea(pts) {
   return a / 2;
 }
 
-function segsIntersect(p1, p2, p3, p4) {
+// segments p1p2 and p3p4 intersect or touch (collinear overlap and endpoint contact count)
+function segsIntersectOrTouch(p1, p2, p3, p4) {
   const d = (a, b, c) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+  const on = (a, b, c) =>
+    Math.min(a[0], b[0]) - 1e-9 <= c[0] &&
+    c[0] <= Math.max(a[0], b[0]) + 1e-9 &&
+    Math.min(a[1], b[1]) - 1e-9 <= c[1] &&
+    c[1] <= Math.max(a[1], b[1]) + 1e-9;
   const d1 = d(p3, p4, p1),
     d2 = d(p3, p4, p2),
     d3 = d(p1, p2, p3),
     d4 = d(p1, p2, p4);
-  return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
+  if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0)))
+    return true;
+  if (d1 === 0 && on(p3, p4, p1)) return true;
+  if (d2 === 0 && on(p3, p4, p2)) return true;
+  if (d3 === 0 && on(p1, p2, p3)) return true;
+  if (d4 === 0 && on(p1, p2, p4)) return true;
+  return false;
 }
 
 function validateProfile(profile, id, errors, lathe) {
@@ -679,17 +691,32 @@ function validateProfile(profile, id, errors, lathe) {
   const same = (a, b) => a[0] === b[0] && a[1] === b[1];
   if (same(profile[0], profile[n - 1]))
     return err('first point must not repeat the last (polygon closes implicitly)');
-  for (let i = 0; i < n - 1; i++)
-    if (same(profile[i], profile[i + 1])) return err(`points ${i} and ${i + 1} are identical`);
+  for (let i = 0; i < n; i++)
+    for (let j = i + 1; j < n; j++)
+      if (same(profile[i], profile[j])) return err(`points ${i} and ${j} are identical`);
   if (Math.abs(signedArea(profile)) < 1e-9) return err('polygon has zero area');
+  for (let i = 0; i < n; i++) {
+    // adjacent edges that fold back onto each other make a zero-width spike
+    const a = profile[(i + n - 1) % n],
+      b = profile[i],
+      c = profile[(i + 1) % n];
+    const ux = b[0] - a[0],
+      uy = b[1] - a[1],
+      vx = c[0] - b[0],
+      vy = c[1] - b[1];
+    if (ux * vy - uy * vx === 0 && ux * vx + uy * vy < 0)
+      return err(`edges ${(i + n - 1) % n} and ${i} fold back on each other`);
+  }
   for (let i = 0; i < n; i++)
     for (let j = i + 2; j < n; j++) {
       if (i === 0 && j === n - 1) continue;
-      if (segsIntersect(profile[i], profile[(i + 1) % n], profile[j], profile[(j + 1) % n]))
-        return err(`edges ${i} and ${j} intersect`);
+      if (segsIntersectOrTouch(profile[i], profile[(i + 1) % n], profile[j], profile[(j + 1) % n]))
+        return err(`edges ${i} and ${j} intersect or touch`);
     }
   if (lathe) {
     if (profile.some((p) => p[0] < 0)) return err('lathe profile r must be >= 0');
+    if (profile.some((p) => p[0] !== 0 && p[0] < 0.01))
+      return err('lathe profile r must be 0 or at least 0.01 mm');
     if (!profile.some((p) => p[0] > 0)) return err('lathe profile needs a point with r > 0');
     for (let i = 0; i < n; i++) {
       if (profile[i][0] !== 0) continue;
@@ -1402,6 +1429,16 @@ function runPrintChecks(items, { layerUm = 50, orientation = 'flat' } = {}) {
     comps.get(r).push(i);
   });
   const grounded = (i) => items[i].bbox.min[2] <= EPS;
+  const sunk = items.map((_, i) => i).filter((i) => items[i].bbox.min[2] < -EPS);
+  let flagged = false;
+  if (sunk.length) {
+    flagged = true;
+    checks.push({
+      id: 'plate:' + sunk.map((i) => items[i].part.id).join(', '),
+      level: 'red',
+      message: `Below the build plate: ${sunk.map((i) => items[i].part.id).join(', ')} (move every part to z >= 0)`,
+    });
+  }
   const confirmedAdj = items.map(() => []),
     adj = items.map(() => []);
   for (const e of edges) {
@@ -1423,7 +1460,6 @@ function runPrintChecks(items, { layerUm = 50, orientation = 'flat' } = {}) {
         queue.push(j);
       }
   }
-  let flagged = false;
   const ids = (arr) => arr.map((i) => items[i].part.id).join(', ');
   for (const members of comps.values()) {
     if (!members.some(grounded)) {
@@ -1560,12 +1596,13 @@ function readStlHeader(buf) {
 
 // --- lifecycle.js ---
 function createRequestTracker() {
+  // revisionId is a monotonic epoch that never resets, so a token from before A -> B -> A stays stale
   let projectId = null,
     revisionId = 0;
   return {
     setProject(id) {
       projectId = id;
-      revisionId = 0;
+      revisionId++;
     },
     bump() {
       revisionId++;
@@ -1600,7 +1637,8 @@ function createSaveController({
     inFlight = null,
     timer = null,
     lastError = null,
-    autosave = true;
+    autosave = true,
+    disposed = false;
   const api = {
     markChanged() {
       generation++;
@@ -1638,13 +1676,24 @@ function createSaveController({
         saving: !!inFlight,
         dirty: api.isDirty(),
         error: lastError,
+        disposed,
       };
     },
     setAutosave(v) {
       autosave = v;
     },
+    dispose() {
+      disposed = true;
+      autosave = false;
+      if (timer) {
+        clearTimer(timer);
+        timer = null;
+      }
+    },
   };
-  const notify = () => onChange(api.state());
+  const notify = () => {
+    if (!disposed) onChange(api.state());
+  };
   function schedule() {
     if (timer) clearTimer(timer);
     timer = setTimer(() => {
@@ -1861,6 +1910,53 @@ function projectDocument(p) {
     currentRevisionId: p.currentRevisionId ?? null,
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
+  };
+}
+
+/** Build one render item for a part; a failing shell is marked, never thrown. */
+function partItem(part) {
+  try {
+    const local = localTriangles(part),
+      mc = meshChecks(local),
+      tris = transformTriangles(local, part.pos, part.rot);
+    return { part, tris, bbox: boundingBox(tris), failed: !mc.ok, failure: mc.errors[0] ?? null };
+  } catch (e) {
+    return {
+      part,
+      tris: new Float64Array(0),
+      bbox: { min: part.pos, max: part.pos, size: [0, 0, 0] },
+      failed: true,
+      failure: e.message,
+    };
+  }
+}
+
+/** Runtime manifold gate: every shell of a prospective list must pass meshChecks before it is accepted. */
+function geometryGate(list) {
+  const errors = [];
+  for (const part of list.parts) {
+    const it = partItem(part);
+    if (it.failed) errors.push(`${part.id}: geometry failed manifold check (${it.failure})`);
+  }
+  return errors.length ? { ok: false, errors } : { ok: true };
+}
+
+/** Per-part geometry cache keyed by the part's JSON, so re-renders do not regenerate unchanged parts. */
+function createPartCache(maxEntries = 400) {
+  const map = new Map();
+  return {
+    item(part) {
+      const key = JSON.stringify(part);
+      const hit = map.get(key);
+      if (hit) return hit;
+      const it = partItem(part);
+      if (map.size >= maxEntries) map.delete(map.keys().next().value);
+      map.set(key, it);
+      return it;
+    },
+    clear() {
+      map.clear();
+    },
   };
 }
 
@@ -2112,6 +2208,7 @@ let imageLimits = null,
   viewport = null,
   saveCtl = null;
 const tracker = createRequestTracker();
+const partCache = createPartCache();
 const state = {
   project: null,
   unsavedRevisions: [],
@@ -2172,25 +2269,8 @@ function render() {
     showError(v.errors[0]);
     return;
   }
-  let anyFailed = false;
-  state.items = list.parts.map((part) => {
-    try {
-      const local = localTriangles(part),
-        mc = meshChecks(local),
-        tris = transformTriangles(local, part.pos, part.rot);
-      if (!mc.ok) anyFailed = true;
-      return { part, tris, bbox: boundingBox(tris), failed: !mc.ok, failure: mc.errors[0] };
-    } catch (e) {
-      anyFailed = true;
-      return {
-        part,
-        tris: new Float64Array(0),
-        bbox: { min: part.pos, max: part.pos, size: [0, 0, 0] },
-        failed: true,
-        failure: e.message,
-      };
-    }
-  });
+  state.items = list.parts.map((part) => partCache.item(part));
+  const anyFailed = state.items.some((it) => it.failed);
   state.result = runPrintChecks(state.items, {
     layerUm: state.layerUm,
     orientation: list.print.orientation,
@@ -2364,7 +2444,11 @@ function assetIds() {
 function applyList(list, { request = null } = {}) {
   const now = Date.now();
   const rev = request
-    ? { id: newId('r'), doc: { at: now, request: truncateRequest(request), partList: list } }
+    ? {
+        id: newId('r'),
+        projectId: state.project.id,
+        doc: { at: now, request: truncateRequest(request), partList: list },
+      }
     : null;
   const prospective = projectDocument({
     ...state.project,
@@ -2376,6 +2460,11 @@ function applyList(list, { request = null } = {}) {
   const size = checkDocumentSizes({ projectDoc: prospective, revisionDoc: rev?.doc });
   if (!size.ok) {
     showError(size.error);
+    return false;
+  }
+  const gate = geometryGate(list);
+  if (!gate.ok) {
+    showError(`Rejected, the previous model is kept: ${gate.errors[0]}`);
     return false;
   }
   state.project.current = list;
@@ -2477,6 +2566,10 @@ async function runInference(kind, requestText) {
     }
     const request =
       kind === 'build' ? `build: ${state.project.brief || 'from photos'}` : requestText;
+    if (token.projectId !== state.project.id) {
+      showError('A result arrived for a different project and was discarded.');
+      return;
+    }
     if (!tracker.isCurrent(token)) {
       state.stale = { list: reply, request };
       $('staleText').textContent =
@@ -2581,11 +2674,11 @@ async function exportFile(kind) {
 
 // ---------- persistence ----------
 const projectsCol = () => caps.db.doc(`data/users/${uid}/workspace`).collection('projects');
-async function saveProject(_gen) {
-  // synchronous snapshot of the state at this generation
-  const snap = JSON.parse(JSON.stringify({ ...state.project, photos: undefined }));
-  const unsaved = [...state.unsavedRevisions];
-  for (const ph of state.project.photos) {
+async function saveProject(project, ctl) {
+  // synchronous snapshot of this project's state at this generation; never read state.project below
+  const snap = JSON.parse(JSON.stringify({ ...project, photos: undefined }));
+  const unsaved = [...state.unsavedRevisions.filter((r) => r.projectId === project.id)];
+  for (const ph of project.photos) {
     if (ph.assetId || !ph.file) continue;
     try {
       const r = await caps.assets.upload(ph.file);
@@ -2595,15 +2688,20 @@ async function saveProject(_gen) {
       ph.error = e?.code || 'upload failed';
     }
   }
-  const pending = state.project.photos.filter((p) => !p.assetId).length;
-  saveCtl.setPendingUploads(pending);
-  renderThumbs();
-  const doc = projectDocument({ ...snap, photoAssetIds: assetIds() });
+  const pending = project.photos.filter((p) => !p.assetId).length;
+  ctl.setPendingUploads(pending);
+  if (project === state.project) renderThumbs();
+  const doc = projectDocument({
+    ...snap,
+    photoAssetIds: project.photos.filter((p) => p.assetId).map((p) => p.assetId),
+  });
   const size = checkDocumentSizes({ projectDoc: doc });
   if (!size.ok) throw new Error(size.error);
   await projectsCol().doc(snap.id).set(doc);
   const revCol = projectsCol().doc(snap.id).collection('revisions');
   for (const rev of unsaved) {
+    const revSize = checkDocumentSizes({ revisionDoc: rev.doc });
+    if (!revSize.ok) throw new Error(revSize.error);
     await revCol.doc(rev.id).set(rev.doc);
     state.unsavedRevisions = state.unsavedRevisions.filter((r) => r !== rev);
   }
@@ -2611,10 +2709,11 @@ async function saveProject(_gen) {
   for (const d of all.docs.slice(0, Math.max(0, all.size - 20))) await revCol.doc(d.id).delete();
   if (pending) throw new Error(`${pending} photo${pending > 1 ? 's' : ''} not uploaded`);
 }
-function makeSaveCtl() {
+function makeSaveCtl(project) {
   const ctl = createSaveController({
-    save: canPersist() ? saveProject : async () => {},
+    save: canPersist() ? () => saveProject(project, ctl) : async () => {},
     onChange: (s) => {
+      if (project !== state.project) return;
       $('saveState').textContent = !canPersist()
         ? 'local only'
         : s.error
@@ -2643,6 +2742,9 @@ async function loadProjectList() {
   return q.docs;
 }
 function installProject(project) {
+  saveCtl?.dispose();
+  state.inference?.controller.abort();
+  partCache.clear();
   state.project = project;
   state.unsavedRevisions = [];
   state.selectedId = null;
@@ -2651,7 +2753,7 @@ function installProject(project) {
   $('chatLog').innerHTML = '';
   $('rawReply').textContent = '';
   tracker.setProject(project.id);
-  saveCtl = makeSaveCtl();
+  saveCtl = makeSaveCtl(project);
   /** @type {HTMLSelectElement} */ ($('projectSelect')).value = canPersist() ? project.id : '';
   render();
   viewport?.fit(state.result.bbox);
@@ -2830,7 +2932,8 @@ async function init() {
     else installProject(state.project);
   } else {
     $('localBanner').classList.remove('hidden');
-    saveCtl = makeSaveCtl();
+    saveCtl?.dispose();
+    saveCtl = makeSaveCtl(state.project);
   }
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

@@ -161,4 +161,9 @@ describe('print checks', () => {
     expect(r.checks.length).toBe(1);
     expect(r.worst).toBe('info');
   });
+  it('a part below the build plate is red and cannot ground a separate tower', () => {
+    const r = run([box('base', [40, 40, 4], [0, 0, 0]), box('tower', [10, 10, 30], [60, 0, 15])]);
+    expect(msgs(r)).toMatch(/red Below the build plate: base/);
+    expect(r.worst).toBe('red');
+  });
 });

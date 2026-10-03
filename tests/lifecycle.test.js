@@ -130,4 +130,39 @@ describe('save controller', () => {
     expect(await p).toBe(true);
     expect(h.ctl.isDirty()).toBe(false);
   });
+  describe('tracker epochs and controller dispose', () => {
+    it('a token from before an A -> B -> A switch is stale', () => {
+      const t = createRequestTracker();
+      t.setProject('A');
+      const tok = t.token();
+      t.setProject('B');
+      t.setProject('A');
+      expect(t.isCurrent(tok)).toBe(false);
+    });
+    it('dispose clears the pending timer and silences later onChange calls', async () => {
+      const timers = [];
+      const changes = [];
+      const ctl = createSaveController({
+        save: async () => {},
+        setTimer: (fn, ms) => {
+          const t = { fn, ms };
+          timers.push(t);
+          return t;
+        },
+        clearTimer: (t) => {
+          const i = timers.indexOf(t);
+          if (i >= 0) timers.splice(i, 1);
+        },
+        onChange: (s) => changes.push(s),
+      });
+      ctl.markChanged();
+      expect(timers.length).toBe(1);
+      ctl.dispose();
+      expect(timers.length).toBe(0);
+      const before = changes.length;
+      ctl.setPendingUploads(2);
+      expect(changes.length).toBe(before);
+      expect(ctl.state().disposed).toBe(true);
+    });
+  });
 });

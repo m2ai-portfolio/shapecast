@@ -128,4 +128,45 @@ describe('documents', () => {
   it('SAMPLE_LIST validates', () => {
     expect(validatePartList(SAMPLE_LIST).ok).toBe(true);
   });
+  describe('geometry gate and part cache', () => {
+    it('geometryGate rejects a list whose shell fails the manifold check, naming the part', async () => {
+      const { geometryGate } = await import('../src/model.js');
+      const bad = {
+        ...EXAMPLE_LIST,
+        parts: [
+          {
+            id: 'x',
+            type: 'extrude',
+            height: 5,
+            profile: [
+              [0, 0],
+              [10, 0],
+              [10, 10],
+              [10, 5],
+              [0, 10],
+            ],
+            pos: [0, 0, 0],
+            rot: [0, 0, 0],
+            role: 'add',
+          },
+        ],
+      };
+      const r = geometryGate(bad);
+      expect(r.ok).toBe(false);
+      expect(r.errors[0]).toMatch(/^x: geometry failed manifold check/);
+      expect(geometryGate(EXAMPLE_LIST).ok).toBe(true);
+    });
+    it('createPartCache returns the same item for an unchanged part and regenerates on change', async () => {
+      const { createPartCache } = await import('../src/model.js');
+      const cache = createPartCache();
+      const a = cache.item(EXAMPLE_LIST.parts[0]);
+      const b = cache.item({ ...EXAMPLE_LIST.parts[0] });
+      expect(b).toBe(a);
+      const c = cache.item({ ...EXAMPLE_LIST.parts[0], size: [1, 1, 1] });
+      expect(c).not.toBe(a);
+      expect(c.bbox.size).toEqual([1, 1, 1]);
+      cache.clear();
+      expect(cache.item(EXAMPLE_LIST.parts[0])).not.toBe(a);
+    });
+  });
 });

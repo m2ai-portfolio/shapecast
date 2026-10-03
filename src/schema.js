@@ -98,13 +98,25 @@ export function signedArea(pts) {
   return a / 2;
 }
 
-function segsIntersect(p1, p2, p3, p4) {
+// segments p1p2 and p3p4 intersect or touch (collinear overlap and endpoint contact count)
+function segsIntersectOrTouch(p1, p2, p3, p4) {
   const d = (a, b, c) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+  const on = (a, b, c) =>
+    Math.min(a[0], b[0]) - 1e-9 <= c[0] &&
+    c[0] <= Math.max(a[0], b[0]) + 1e-9 &&
+    Math.min(a[1], b[1]) - 1e-9 <= c[1] &&
+    c[1] <= Math.max(a[1], b[1]) + 1e-9;
   const d1 = d(p3, p4, p1),
     d2 = d(p3, p4, p2),
     d3 = d(p1, p2, p3),
     d4 = d(p1, p2, p4);
-  return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
+  if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0)))
+    return true;
+  if (d1 === 0 && on(p3, p4, p1)) return true;
+  if (d2 === 0 && on(p3, p4, p2)) return true;
+  if (d3 === 0 && on(p1, p2, p3)) return true;
+  if (d4 === 0 && on(p1, p2, p4)) return true;
+  return false;
 }
 
 function validateProfile(profile, id, errors, lathe) {
@@ -119,17 +131,32 @@ function validateProfile(profile, id, errors, lathe) {
   const same = (a, b) => a[0] === b[0] && a[1] === b[1];
   if (same(profile[0], profile[n - 1]))
     return err('first point must not repeat the last (polygon closes implicitly)');
-  for (let i = 0; i < n - 1; i++)
-    if (same(profile[i], profile[i + 1])) return err(`points ${i} and ${i + 1} are identical`);
+  for (let i = 0; i < n; i++)
+    for (let j = i + 1; j < n; j++)
+      if (same(profile[i], profile[j])) return err(`points ${i} and ${j} are identical`);
   if (Math.abs(signedArea(profile)) < 1e-9) return err('polygon has zero area');
+  for (let i = 0; i < n; i++) {
+    // adjacent edges that fold back onto each other make a zero-width spike
+    const a = profile[(i + n - 1) % n],
+      b = profile[i],
+      c = profile[(i + 1) % n];
+    const ux = b[0] - a[0],
+      uy = b[1] - a[1],
+      vx = c[0] - b[0],
+      vy = c[1] - b[1];
+    if (ux * vy - uy * vx === 0 && ux * vx + uy * vy < 0)
+      return err(`edges ${(i + n - 1) % n} and ${i} fold back on each other`);
+  }
   for (let i = 0; i < n; i++)
     for (let j = i + 2; j < n; j++) {
       if (i === 0 && j === n - 1) continue;
-      if (segsIntersect(profile[i], profile[(i + 1) % n], profile[j], profile[(j + 1) % n]))
-        return err(`edges ${i} and ${j} intersect`);
+      if (segsIntersectOrTouch(profile[i], profile[(i + 1) % n], profile[j], profile[(j + 1) % n]))
+        return err(`edges ${i} and ${j} intersect or touch`);
     }
   if (lathe) {
     if (profile.some((p) => p[0] < 0)) return err('lathe profile r must be >= 0');
+    if (profile.some((p) => p[0] !== 0 && p[0] < 0.01))
+      return err('lathe profile r must be 0 or at least 0.01 mm');
     if (!profile.some((p) => p[0] > 0)) return err('lathe profile needs a point with r > 0');
     for (let i = 0; i < n; i++) {
       if (profile[i][0] !== 0) continue;

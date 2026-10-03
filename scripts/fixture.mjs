@@ -2,6 +2,7 @@ import JSZip from 'jszip';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { writeBinaryStl, listToTriangles } from '../src/stl.js';
 import { validatePartList } from '../src/schema.js';
+import { SAMPLE_LIST } from '../src/model.js';
 
 const add = (id, type, extra) => ({
   id,
@@ -29,26 +30,7 @@ const fixtures = {
       add('post', 'cylinder', { radius: 6, height: 30, pos: [0, 0, 18.5] }),
     ],
   },
-  'catapult-arm': {
-    ...base,
-    name: 'catapult arm',
-    parts: [
-      add('arm', 'box', { size: [120, 8, 6], pos: [0, 0, 3] }),
-      add('cup', 'lathe', {
-        profile: [
-          [0, 0],
-          [12, 0],
-          [12, 2],
-          [10, 2],
-          [10, 9],
-          [0, 9],
-        ],
-        pos: [52, 0, 5.5],
-      }),
-      add('pivot', 'cylinder', { radius: 5, height: 14, rot: [90, 0, 0], pos: [-20, 0, 5] }),
-      add('weight', 'box', { size: [18, 18, 18], pos: [-56, 0, 8.5] }),
-    ],
-  },
+  'sample-model': SAMPLE_LIST,
 };
 
 const zip = new JSZip();

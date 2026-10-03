@@ -351,6 +351,16 @@ async function runInference(kind, requestText) {
       );
     note(notes.join('; '));
     images = prep.images;
+    if (!images.length && !state.project.brief.trim()) {
+      showError(
+        imageLimits
+          ? 'Nothing to build from: add a usable photo or write a brief.'
+          : 'This viewer cannot send photos to Claude, and the brief is empty. Write a brief, or open the artifact at claude.ai in a browser or the Claude mobile app to build from photos.',
+      );
+      state.inference = null;
+      setBusy(false, '');
+      return;
+    }
     prompt = builderPrompt({
       brief: state.project.brief,
       scaleRef: state.project.scaleRef,

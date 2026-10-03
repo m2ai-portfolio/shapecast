@@ -1,6 +1,6 @@
 # ShapeCast design spec
 
-Date: 2026-10-03. Owner: Matthew. Status: v4, revised after Codex checkmate round 3.
+Date: 2026-10-03. Owner: Matthew. Status: v5, revised after Codex checkmate round 4.
 
 ## Goal
 
@@ -22,7 +22,8 @@ and out of scope.
 2. `npm run build` produces `index.html` under 1 MB with no external script host other than
    cdnjs.cloudflare.com.
 3. The artifact is published with capabilities `sample, downloads, db, assets, user`; one
-   `ArtifactData` list of `data/users/<uid>/projects` after a Save shows the saved project.
+   `ArtifactData` list of `data/users/<uid>/workspace/projects` after a Save shows the saved
+   project.
 4. Manual acceptance on AlienPC: the fixture zip `tests/fixtures/chitubox-acceptance.zip`
    (overlapping boxes, a cylinder joined to a box at 0.5 mm overlap, and the sample catapult
    arm) is opened in Chitubox, sliced at 50 um, and the layers through every overlap region
@@ -60,7 +61,7 @@ source. Anything marked ASSUMPTION is re-verified in the Phase 0 probe (see Plan
 | `user.id()` resolves an opaque id or `null`; `user.me()` never null | `user.d.ts` lines 89-134 |
 | Camera, microphone, WebRTC refused; file inputs, drag-drop and FileReader work | Artifact tool page contract (quoted in `docs/platform/page-contract.md`) |
 | Scripts load only from cdnjs.cloudflare.com, cdn.jsdelivr.net/npm, unpkg.com, cdn.tailwindcss.com, code.jquery.com; fetch to any other host blocked | same |
-| cdnjs serves `three.js/0.160.0/three.min.js` (UMD) and `jszip/3.10.1/jszip.min.js` | `curl -I` this session, HTTP 200 both; newer three.js releases on cdnjs ship module builds only |
+| cdnjs serves `three.js/0.160.0/three.min.js` (UMD) and `jszip/3.10.1/jszip.min.js` | `curl -I` from ProBook this session returned HTTP 200 for both (the review sandbox has no network, so this is re-proven in Phase 0: the probe page loads both scripts and prints `typeof THREE` and `typeof JSZip`, and the screenshot is kept in `docs/acceptance/`) |
 | Saturn 3 (12K): 218.88 x 122.88 x 250 mm, 19 x 24 um XY pixel, 0.01 to 0.2 mm layers, Chitubox | elegoo.com product page; 3dpros.com spec sheet |
 | ASSUMPTION: `<input type="file" capture="environment">` opens the Pixel camera inside the Claude Android app | Phase 0 probe |
 | ASSUMPTION: `sample.limits().images` is present in the Claude app and desktop viewer Matthew uses | Phase 0 probe |
@@ -268,29 +269,41 @@ may not (amber); a 0.5 mm disk; a 1.0 mm wall extrude; a model that fits only af
 Capabilities declared: `sample`, `downloads`, `db`, `assets`, `user`.
 
 - `db` rules: `{path: "", read: "view", write: "admin"}` and
-  `{path: "data/users/{self}", write: "interact"}`. Projects live at
-  `data/users/<uid>/projects/<projectId>`.
+  `{path: "data/users/{self}", write: "interact"}`.
+- Path grammar (`db.d.ts:195-218`): collection paths have an odd segment count, document
+  paths an even count, and `data/users/<uid>` (3) is itself a collection. So the per-viewer
+  root is the document `data/users/<uid>/workspace` (4), projects are its subcollection
+  `data/users/<uid>/workspace/projects` (5), each project a document (6), and revisions a
+  subcollection under the project (7) with revision documents (8). Refs are built from the
+  workspace document ref (`ws.collection("projects").doc(id).collection("revisions")`) so
+  parity is kept by construction; Phase 0 builds one of each ref and confirms no TypeError.
 - Identity: `uid = await user.id()`. If `user` or `db` or `assets` resolves `null`, or `uid`
   is `null`, Save is hidden and a banner says "Not signed in to Claude: this session is
   local only and will not sync". The page remains fully usable.
 - Storage layout (byte-aware; db caps a document at 256 KiB, `db.d.ts:484`):
-  - `projects/<projectId>`: `{name, brief, scaleRef, photoAssetIds[], current, currentRevisionId,
-    createdAt, updatedAt}`. `current` is at most 120 KiB by the validator's byte budget, so
-    this document stays under about 125 KiB.
-  - `projects/<projectId>/revisions/<revisionId>`: `{at, request, partList}`, one document
+  - `data/users/<uid>/workspace/projects/<projectId>`: `{name, brief, scaleRef,
+    photoAssetIds[], current, currentRevisionId, createdAt, updatedAt}`. Metadata bounds,
+    enforced in the input fields and again before acceptance: `name` 1-80 chars, `brief`
+    at most 4,000 chars, `scaleRef` at most 300 chars, `photoAssetIds` at most 8 entries.
+    `current` is at most 120 KiB by the validator's byte budget, so this document stays under
+    about 130 KiB.
+  - `.../projects/<projectId>/revisions/<revisionId>`: `{at, request, partList}`, one document
     per revision. `assumptions` are not duplicated; they live inside `partList`. `request` is
     the user's chat text truncated to 2,000 characters. With the list at most 120 KiB and
     the remaining fields under 3 KiB, every revision document stays under 125 KiB. At most
     20 are kept; on the 21st write the oldest (by `at`) is deleted after the new one succeeds.
-  - A revision is **accepted** (applied to the page) only after its complete revision
-    payload serialises to at most 200 KiB; otherwise the reply is rejected like any
-    validation failure and the previous good state stays. The same 200 KiB serialisation
+  - A change is **accepted** (applied to the page) only after both the complete prospective
+    project document and, for a revision, the complete revision document serialise to at
+    most 200 KiB; otherwise the change is rejected like any validation failure and the
+    previous good state stays. This covers edits to brief and scale reference as well as
+    model replies. The same 200 KiB serialisation
     guard runs before every write as a second check, showing "Project too large to save" and
     leaving the stored copy untouched if it ever trips. Tests: a maximum-size valid project
     (list at the 120 KiB budget with 20 assumptions of 300 characters, 20 revisions) saves
     and reopens; a list over budget is rejected before the previous good state is replaced;
     the duplication case (one box plus a very long assumption) is rejected by the
-    assumption-length rule.
+    assumption-length rule; a 4,000-character brief with a maximum-size list still saves; a
+    brief over 4,000 characters is refused at input.
 - Save sequencing: photos upload first (`assets.upload`), then the project doc is written
   with the asset ids. A photo whose upload fails stays in memory as a **pending upload**.
   The document write still proceeds without it, but the project stays `dirty` while any
@@ -350,9 +363,11 @@ the page loads JSZip from cdnjs). No runtime dependencies.
 
 0. **Phase 0 probe (half a day).** Publish a 60-line probe artifact that declares the five
    capabilities and shows: `sample.limits()`, whether `use()` returned null for each, a file
-   input with `capture="environment"`, and one `downloads.save` of a 1 KB zip. Matthew opens
-   it on the Pixel and the Surface. Both ASSUMPTION rows above are resolved from what it
-   shows. Deleted afterwards.
+   input with `capture="environment"`, one `downloads.save` of a 1 KB zip, `typeof THREE`
+   and `typeof JSZip` after loading the two pinned cdnjs scripts, and the result of building
+   the workspace, project and revision refs (no TypeError). Matthew opens it on the Pixel and
+   the Surface. The ASSUMPTION rows and the CDN row are resolved from what it shows; a
+   screenshot goes to `docs/acceptance/`. The probe is deleted afterwards.
 1. Repo scaffold and tooling (layout above), CI-free; `npm test` runs green on an empty suite.
 2. `schema.js` with tests for every rejection class and the worked example.
 3. `geometry.js`: per-type generation, ear clipping, `meshChecks`, volumes; tests per type.

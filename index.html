@@ -2441,7 +2441,7 @@ function renderThumbs() {
 function assetIds() {
   return state.project.photos.filter((p) => p.assetId).map((p) => p.assetId);
 }
-function applyList(list, { request = null } = {}) {
+function applyList(list, { request = null, rename = false } = {}) {
   const now = Date.now();
   const rev = request
     ? {
@@ -2452,6 +2452,7 @@ function applyList(list, { request = null } = {}) {
     : null;
   const prospective = projectDocument({
     ...state.project,
+    name: rename && typeof list.name === 'string' ? list.name : state.project.name,
     photoAssetIds: assetIds(),
     current: list,
     currentRevisionId: rev?.id ?? state.project.currentRevisionId,
@@ -2469,6 +2470,7 @@ function applyList(list, { request = null } = {}) {
   }
   state.project.current = list;
   state.project.updatedAt = now;
+  if (rename && typeof list.name === 'string') state.project.name = list.name.slice(0, META.name);
   if (rev) {
     state.unsavedRevisions.push(rev);
     state.project.currentRevisionId = rev.id;
@@ -2587,7 +2589,7 @@ async function runInference(kind, requestText) {
       $('staleCard').classList.remove('hidden');
       return;
     }
-    if (applyList(reply, { request })) {
+    if (applyList(reply, { request, rename: kind === 'build' })) {
       addChat(
         'claude',
         reply.assumptions.length ? reply.assumptions.join(' | ') : 'Model updated.',

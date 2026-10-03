@@ -12,5 +12,5 @@
     "types": ["node"],
     "maxNodeModuleJsDepth": 0
   },
-  "include": ["src/**/*.js", "scripts/**/*.mjs"]
+  "include": ["src/**/*.js", "src/**/*.d.ts", "scripts/**/*.mjs"]
 }

@@ -1,19 +1,2107 @@
 <title>ShapeCast</title>
 <style>
+  /* layout: three columns (capture | viewport | parts and print) that stack at phone width; the viewport is the hero */
   :root {
-    --bg: #f6f5f2;
-    --fg: #1d1d1b;
+    --bg: #f3f2ee;
+    --fg: #1f1f1c;
+    --muted: #6b6a64;
+    --panel: #ffffff;
+    --line: #d9d6cd;
+    --accent: #c97a12;
+    --accent-ink: #ffffff;
+    --red: #b3261e;
+    --amber: #b86e00;
+    --green: #2d7d46;
+    --info: #4a5a73;
+    --plate: #b9b5aa;
+    --grid: #8e8a80;
+    --part: #8a8f99;
+    --font-ui: 'IBM Plex Sans', system-ui, sans-serif;
+    --font-num: 'IBM Plex Mono', ui-monospace, monospace;
+    --font-display: 'Barlow Condensed', 'Arial Narrow', sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) {
+      --bg: #17181a;
+      --fg: #ebe9e3;
+      --muted: #9a9890;
+      --panel: #202226;
+      --line: #34373d;
+      --accent: #e0912a;
+      --accent-ink: #1a1a1a;
+      --red: #ff6b61;
+      --amber: #f0a73a;
+      --green: #5fc27d;
+      --info: #9fb4d6;
+      --plate: #3a3d44;
+      --grid: #5a5e66;
+      --part: #a7adb8;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme='dark'] {
+    --bg: #17181a;
+    --fg: #ebe9e3;
+    --muted: #9a9890;
+    --panel: #202226;
+    --line: #34373d;
+    --accent: #e0912a;
+    --accent-ink: #1a1a1a;
+    --red: #ff6b61;
+    --amber: #f0a73a;
+    --green: #5fc27d;
+    --info: #9fb4d6;
+    --plate: #3a3d44;
+    --grid: #5a5e66;
+    --part: #a7adb8;
+    color-scheme: dark;
+  }
+  html,
+  body {
+    height: 100%;
   }
   body {
+    margin: 0;
     background: var(--bg);
     color: var(--fg);
+    font: 14px/1.45 var(--font-ui);
+    padding-block: 0;
+    padding-inline: 16px;
+  }
+  h1 {
+    font: 600 28px/1 var(--font-display);
+    letter-spacing: 0.02em;
+    margin: 0;
+    text-wrap: balance;
+  }
+  h2 {
+    font: 600 13px/1.2 var(--font-ui);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    margin: 0 0 8px;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding-block: 12px;
+    border-bottom: 1px solid var(--line);
+    flex-wrap: wrap;
+  }
+  header .sub {
+    color: var(--muted);
+    font-size: 12px;
+  }
+  main {
+    display: grid;
+    grid-template-columns: 300px minmax(0, 1fr) 340px;
+    gap: 16px;
+    padding-block: 16px;
+  }
+  @media (max-width: 1000px) {
+    main {
+      grid-template-columns: 1fr;
+    }
+  }
+  section.col {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-width: 0;
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 12px;
+  }
+  label {
+    display: block;
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+  input,
+  textarea,
+  select,
+  button {
+    font: inherit;
+    color: inherit;
+  }
+  input[type='text'],
+  textarea,
+  select {
+    width: 100%;
+    box-sizing: border-box;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 6px 8px;
+  }
+  textarea {
+    min-height: 72px;
+    resize: vertical;
+  }
+  button {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 6px 10px;
+    cursor: pointer;
+  }
+  button.primary {
+    background: var(--accent);
+    color: var(--accent-ink);
+    border-color: var(--accent);
+    font-weight: 600;
+  }
+  button:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  button:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+  .row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .well {
+    border: 1px dashed var(--line);
+    border-radius: 6px;
+    padding: 10px;
+    text-align: center;
+    color: var(--muted);
+  }
+  .well.over {
+    border-color: var(--accent);
+  }
+  .thumbs {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+    justify-content: center;
+  }
+  .thumb {
+    position: relative;
+    width: 64px;
+    height: 64px;
+    border-radius: 4px;
+    overflow: hidden;
+    border: 1px solid var(--line);
+  }
+  .thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .thumb button {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    padding: 0 5px;
+    line-height: 18px;
+    font-size: 12px;
+  }
+  .thumb.pending::after {
+    content: 'not uploaded';
+    position: absolute;
+    inset: auto 0 0 0;
+    background: var(--amber);
+    color: #000;
+    font-size: 10px;
+    text-align: center;
+  }
+  #viewWrap {
+    position: relative;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    min-height: 420px;
+    height: min(70vh, 720px);
+    overflow: hidden;
+  }
+  #viewport {
+    width: 100%;
+    height: 100%;
+    display: block;
+    touch-action: none;
+  }
+  .viewbar {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    display: flex;
+    gap: 6px;
+  }
+  #bboxReadout {
+    position: absolute;
+    right: 10px;
+    bottom: 8px;
+    font: 12px var(--font-num);
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  #viewNotice {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    color: var(--muted);
+    padding: 16px;
+    text-align: center;
+  }
+  #status {
+    min-height: 20px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .chat {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 260px;
+    overflow: auto;
+  }
+  .msg {
+    padding: 6px 8px;
+    border-radius: 4px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    font-size: 13px;
+  }
+  .msg.user {
+    border-color: var(--accent);
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  th {
+    text-align: left;
+    color: var(--muted);
+    font-weight: 500;
+    padding: 4px 2px;
+  }
+  td {
+    padding: 3px 2px;
+    vertical-align: top;
+    border-top: 1px solid var(--line);
+  }
+  td input {
+    width: 62px;
+    font: 12px var(--font-num);
+    font-variant-numeric: tabular-nums;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 2px 4px;
+    color: inherit;
+  }
+  tr.sel td {
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+  }
+  .tuple {
+    display: flex;
+    gap: 2px;
+    align-items: center;
+    margin-block: 1px;
+  }
+  .tuple .small {
+    width: 58px;
+    flex: none;
+  }
+  .chips {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .chip {
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+    font-size: 12px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--line);
+  }
+  .chip::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--info);
+    flex: none;
+    transform: translateY(1px);
+  }
+  .chip.red::before {
+    background: var(--red);
+  }
+  .chip.amber::before {
+    background: var(--amber);
+  }
+  .chip.green::before {
+    background: var(--green);
+  }
+  .assume {
+    border-left: 3px solid var(--amber);
+    padding: 6px 10px;
+    font-size: 13px;
+    background: color-mix(in srgb, var(--amber) 10%, transparent);
+    border-radius: 0 4px 4px 0;
+  }
+  .assume ul {
+    margin: 4px 0 0 16px;
+    padding: 0;
+  }
+  .banner {
+    padding: 8px 10px;
+    border-radius: 4px;
+    font-size: 13px;
+    border: 1px solid var(--line);
+    margin-top: 10px;
+  }
+  .banner.error {
+    border-color: var(--red);
+    color: var(--red);
+  }
+  .banner.warn {
+    border-color: var(--amber);
+  }
+  .hidden {
+    display: none !important;
+  }
+  details summary {
+    cursor: pointer;
+    color: var(--muted);
+    font-size: 12px;
+  }
+  pre {
+    white-space: pre-wrap;
+    word-break: break-word;
+    font: 11px var(--font-num);
+    max-height: 200px;
+    overflow: auto;
+  }
+  .small {
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .num {
+    font-family: var(--font-num);
+    font-variant-numeric: tabular-nums;
+  }
+  .inline-label {
+    display: inline;
+    color: var(--accent);
+    cursor: pointer;
+  }
+  .mt {
+    margin-top: 10px;
   }
 </style>
-<div id="app">ShapeCast scaffold</div>
+<link
+  rel="stylesheet"
+  href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600&family=IBM+Plex+Sans:wght@400;600&family=IBM+Plex+Mono&display=swap"
+/>
+<header>
+  <div>
+    <h1>ShapeCast</h1>
+    <div class="sub">Photo, sketch or prompt to a Saturn 3 resin print</div>
+  </div>
+  <div class="row">
+    <select id="projectSelect" aria-label="Project" style="width: auto">
+      <option value="">New project</option>
+    </select>
+    <button id="newProjectBtn">New</button>
+    <span id="saveState" class="small">local only</span>
+  </div>
+</header>
+<div id="localBanner" class="banner warn hidden">
+  Not signed in to Claude: this session is local only and will not sync.
+</div>
+<div id="message" class="banner error hidden" role="alert"></div>
+<div id="switchDialog" class="banner warn hidden">
+  <span id="switchText">Unsaved changes.</span>
+  <span class="row mt"
+    ><button id="switchSave" class="primary">Save and switch</button
+    ><button id="switchDiscard">Discard and switch</button
+    ><button id="switchStay">Stay</button></span
+  >
+</div>
+<main>
+  <section class="col">
+    <div class="card">
+      <h2>Capture</h2>
+      <div id="dropWell" class="well">
+        Drop photos here or
+        <label class="inline-label"
+          ><input
+            id="photoInput"
+            type="file"
+            accept="image/*"
+            capture="environment"
+            multiple
+            hidden
+          />take / choose a photo</label
+        >
+        <div id="photoNote" class="small"></div>
+        <div id="thumbs" class="thumbs"></div>
+      </div>
+      <label for="scaleRef" class="mt">Scale reference</label>
+      <input id="scaleRef" type="text" maxlength="300" placeholder="the coin is 24.26 mm across" />
+      <label for="brief" class="mt">Brief</label>
+      <textarea
+        id="brief"
+        maxlength="4000"
+        placeholder="a stand for my phone, slot 12 mm deep, 10 degree lean"
+      ></textarea>
+      <div class="row mt">
+        <button id="buildBtn" class="primary">Build model</button
+        ><button id="stopBtn" class="hidden">Stop</button>
+      </div>
+      <div id="status"></div>
+    </div>
+    <div class="card">
+      <h2>Revise with Claude</h2>
+      <div id="chatLog" class="chat"></div>
+      <div class="row mt">
+        <input
+          id="chatInput"
+          type="text"
+          maxlength="2000"
+          placeholder="make the slot 2 mm wider"
+          style="flex: 1"
+        /><button id="sendBtn">Send</button>
+      </div>
+      <div id="staleCard" class="banner warn hidden">
+        <span id="staleText"></span>
+        <span class="row mt"
+          ><button id="staleApply">Apply anyway</button
+          ><button id="staleDiscard">Discard</button></span
+        >
+      </div>
+    </div>
+  </section>
+  <section class="col">
+    <div id="viewWrap">
+      <canvas id="viewport"></canvas>
+      <div class="viewbar">
+        <button id="fitBtn">Fit</button><button id="isoBtn">Iso</button
+        ><button id="topBtn">Top</button><button id="frontBtn">Front</button>
+      </div>
+      <div id="bboxReadout"></div>
+      <div id="viewNotice" class="hidden">
+        3D preview unavailable in this browser. The parts table and export still work.
+      </div>
+    </div>
+  </section>
+  <section class="col">
+    <div class="card">
+      <h2>Parts</h2>
+      <div class="row" style="margin-bottom: 8px">
+        <label for="projectName" style="margin: 0">Name</label
+        ><input id="projectName" type="text" maxlength="80" style="flex: 1" />
+      </div>
+      <div style="overflow-x: auto">
+        <table id="partsTable">
+          <thead>
+            <tr>
+              <th>id</th>
+              <th>type</th>
+              <th>dims (mm, deg)</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+    <div id="assumptions" class="assume hidden"></div>
+    <div class="card">
+      <h2>Print check <span class="small">Saturn 3</span></h2>
+      <div class="row" style="margin-bottom: 8px">
+        <label for="layerSelect" style="margin: 0">Layer</label
+        ><select id="layerSelect" style="width: auto">
+          <option value="10">10 um</option>
+          <option value="30">30 um</option>
+          <option value="50" selected>50 um</option>
+          <option value="100">100 um</option>
+        </select>
+      </div>
+      <div id="checks" class="chips"></div>
+      <div class="row mt">
+        <button id="exportBtn" class="primary">Export .zip (STL)</button
+        ><button id="exportJsonBtn">Export JSON</button>
+      </div>
+      <div id="exportNote" class="small"></div>
+    </div>
+    <details class="card">
+      <summary>Raw reply / debug</summary>
+      <pre id="rawReply"></pre>
+    </details>
+  </section>
+</main>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
 'use strict';
+// --- schema.js ---
+const LIMITS = {
+  parts: [1, 200],
+  nameChars: [1, 80],
+  idChars: [1, 40],
+  idPattern: /^[a-z0-9_-]+$/,
+  lengthMm: [0.1, 300],
+  posMm: [-1000, 1000],
+  rotDeg: [-360, 360],
+  segments: [3, 256],
+  defaultSegments: 64,
+  profilePoints: [3, 200],
+  profileCoord: [-300, 300],
+  assumptions: [0, 20],
+  assumptionChars: [1, 300],
+  triangleBudget: 1_000_000,
+  listBytes: 120 * 1024,
+  layerUm: [10, 30, 50, 100],
+};
+const PART_TYPES = [
+  'box',
+  'cylinder',
+  'cone',
+  'sphere',
+  'torus',
+  'extrude',
+  'lathe',
+  'wedge',
+];
+
+const EXAMPLE_LIST = {
+  name: 'phone stand',
+  units: 'mm',
+  parts: [
+    { id: 'base', type: 'box', size: [70, 60, 4], pos: [0, 0, 2], rot: [0, 0, 0], role: 'add' },
+    {
+      id: 'back',
+      type: 'extrude',
+      profile: [
+        [0, 0],
+        [40, 0],
+        [40, 3],
+        [0, 3],
+      ],
+      height: 60,
+      pos: [-20, -28, 2],
+      rot: [90, 0, 0],
+      role: 'add',
+    },
+  ],
+  assumptions: ['overall height estimated at 60 mm, no scale reference given'],
+  print: { orientation: 'flat', suggestedLayerUm: 50 },
+};
+
+const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
+const inRange = (v, range) => isNum(v) && v >= range[0] && v <= range[1];
+const tuple = (v, n, range) =>
+  Array.isArray(v) && v.length === n && v.every((x) => inRange(x, range));
+
+function segmentsOf(part) {
+  return part.segments ?? LIMITS.defaultSegments;
+}
+
+function triangleCount(part) {
+  const n = segmentsOf(part);
+  switch (part.type) {
+    case 'box':
+      return 12;
+    case 'wedge':
+      return 8;
+    case 'cylinder':
+      return (part.radiusTop ?? part.radius) > 0 ? 4 * n : 2 * n;
+    case 'cone':
+      return 2 * n;
+    case 'sphere':
+      return 2 * n * (Math.max(3, Math.floor(n / 2)) - 1);
+    case 'torus':
+      return 2 * n * Math.max(8, Math.floor(n / 2));
+    case 'extrude':
+      return 2 * (part.profile.length - 2) + 2 * part.profile.length;
+    case 'lathe':
+      return 2 * n * part.profile.length;
+    default:
+      return 0;
+  }
+}
+
+function compactBytes(value) {
+  return new TextEncoder().encode(JSON.stringify(value)).length;
+}
+
+function signedArea(pts) {
+  let a = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i],
+      q = pts[(i + 1) % pts.length];
+    a += p[0] * q[1] - q[0] * p[1];
+  }
+  return a / 2;
+}
+
+function segsIntersect(p1, p2, p3, p4) {
+  const d = (a, b, c) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+  const d1 = d(p3, p4, p1),
+    d2 = d(p3, p4, p2),
+    d3 = d(p1, p2, p3),
+    d4 = d(p1, p2, p4);
+  return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
+}
+
+function validateProfile(profile, id, errors, lathe) {
+  const err = (m) => {
+    errors.push(`${id}.profile: ${m}`);
+  };
+  if (!Array.isArray(profile) || !inRange(profile.length, LIMITS.profilePoints))
+    return err('must have 3 to 200 points');
+  for (const [i, p] of profile.entries())
+    if (!tuple(p, 2, LIMITS.profileCoord)) return err(`point ${i} must be [x, y] within -300..300`);
+  const n = profile.length;
+  const same = (a, b) => a[0] === b[0] && a[1] === b[1];
+  if (same(profile[0], profile[n - 1]))
+    return err('first point must not repeat the last (polygon closes implicitly)');
+  for (let i = 0; i < n - 1; i++)
+    if (same(profile[i], profile[i + 1])) return err(`points ${i} and ${i + 1} are identical`);
+  if (Math.abs(signedArea(profile)) < 1e-9) return err('polygon has zero area');
+  for (let i = 0; i < n; i++)
+    for (let j = i + 2; j < n; j++) {
+      if (i === 0 && j === n - 1) continue;
+      if (segsIntersect(profile[i], profile[(i + 1) % n], profile[j], profile[(j + 1) % n]))
+        return err(`edges ${i} and ${j} intersect`);
+    }
+  if (lathe) {
+    if (profile.some((p) => p[0] < 0)) return err('lathe profile r must be >= 0');
+    if (!profile.some((p) => p[0] > 0)) return err('lathe profile needs a point with r > 0');
+    for (let i = 0; i < n; i++) {
+      if (profile[i][0] !== 0) continue;
+      const a = profile[(i + n - 1) % n],
+        b = profile[(i + 1) % n];
+      if (a[0] > 0 && b[0] > 0)
+        return err(`touches the axis at a single point (point ${i}); extend it along the axis`);
+    }
+  }
+}
+
+function validatePart(part, i, seen, errors) {
+  const id = typeof part?.id === 'string' ? part.id : `parts[${i}]`;
+  const err = (m) => {
+    errors.push(`${id}: ${m}`);
+  };
+  if (typeof part !== 'object' || part === null) return err('must be an object');
+  if (
+    typeof part.id !== 'string' ||
+    !inRange(part.id.length, LIMITS.idChars) ||
+    !LIMITS.idPattern.test(part.id)
+  )
+    err('id must be 1-40 chars of a-z 0-9 _ -');
+  else if (seen.has(part.id)) err('id is not unique');
+  else seen.add(part.id);
+  if (!PART_TYPES.includes(part.type)) return err(`unknown type "${part.type}"`);
+  if (part.role !== 'add')
+    return err(part.role === 'sub' ? 'subtractive parts arrive in v2' : 'role must be "add"');
+  if (!tuple(part.pos, 3, LIMITS.posMm))
+    err('pos must be [x, y, z] finite numbers within -1000..1000');
+  if (!tuple(part.rot, 3, LIMITS.rotDeg)) err('rot must be [x, y, z] degrees within -360..360');
+  const len = (k) => {
+    if (!inRange(part[k], LIMITS.lengthMm)) err(`${k} must be 0.1 to 300 mm`);
+  };
+  if (
+    part.segments !== undefined &&
+    (!Number.isInteger(part.segments) || !inRange(part.segments, LIMITS.segments))
+  )
+    err('segments must be an integer 3 to 256');
+  switch (part.type) {
+    case 'box':
+    case 'wedge':
+      if (!tuple(part.size, 3, LIMITS.lengthMm)) err('size must be [x, y, z] each 0.1 to 300 mm');
+      break;
+    case 'cylinder':
+      len('radius');
+      len('height');
+      if (
+        part.radiusTop !== undefined &&
+        part.radiusTop !== 0 &&
+        !inRange(part.radiusTop, LIMITS.lengthMm)
+      )
+        err('radiusTop must be 0 or 0.1 to 300 mm');
+      break;
+    case 'cone':
+      len('radius');
+      len('height');
+      break;
+    case 'sphere':
+      len('radius');
+      break;
+    case 'torus':
+      len('radius');
+      len('tube');
+      if (isNum(part.tube) && isNum(part.radius) && part.tube >= part.radius)
+        err('tube must be smaller than radius');
+      break;
+    case 'extrude':
+      len('height');
+      validateProfile(part.profile, id, errors, false);
+      break;
+    case 'lathe':
+      validateProfile(part.profile, id, errors, true);
+      break;
+  }
+}
+
+function validatePartList(list) {
+  const errors = [];
+  if (typeof list !== 'object' || list === null || Array.isArray(list))
+    return { ok: false, errors: ['part list must be a JSON object'] };
+  if (typeof list.name !== 'string' || !inRange(list.name.length, LIMITS.nameChars))
+    errors.push('name must be 1-80 characters');
+  if (list.units !== 'mm') errors.push('units must be "mm"');
+  if (!Array.isArray(list.parts) || !inRange(list.parts.length, LIMITS.parts))
+    errors.push('parts must have 1 to 200 entries');
+  if (
+    !Array.isArray(list.assumptions) ||
+    !inRange(list.assumptions.length, LIMITS.assumptions) ||
+    !list.assumptions.every(
+      (a) => typeof a === 'string' && inRange(a.length, LIMITS.assumptionChars),
+    )
+  )
+    errors.push('assumptions must be 0-20 strings of 1-300 characters');
+  const print = list.print ?? {};
+  if (!['flat', 'angled'].includes(print.orientation))
+    errors.push('print.orientation must be "flat" or "angled"');
+  if (!LIMITS.layerUm.includes(print.suggestedLayerUm))
+    errors.push('print.suggestedLayerUm must be 10, 30, 50 or 100');
+  if (errors.length) return { ok: false, errors };
+  const seen = new Set();
+  list.parts.forEach((p, i) => validatePart(p, i, seen, errors));
+  if (errors.length) return { ok: false, errors };
+  const triangles = list.parts.reduce((s, p) => s + triangleCount(p), 0);
+  if (triangles > LIMITS.triangleBudget)
+    errors.push(`model needs ${triangles} triangles; the limit is ${LIMITS.triangleBudget}`);
+  const bytes = compactBytes(list);
+  if (bytes > LIMITS.listBytes)
+    errors.push(`part list is ${bytes} bytes; the limit is ${LIMITS.listBytes}`);
+  return errors.length ? { ok: false, errors } : { ok: true, value: list, triangles, bytes };
+}
+
+// --- geometry.js ---
+
+class TriBuffer {
+  constructor(capacity) {
+    this.a = new Float64Array(Math.max(1, capacity) * 9);
+    this.n = 0;
+  }
+  push(p, q, r) {
+    if ((this.n + 1) * 9 > this.a.length) {
+      const g = new Float64Array(this.a.length * 2 + 9);
+      g.set(this.a);
+      this.a = g;
+    }
+    const o = this.n * 9,
+      a = this.a;
+    a[o] = p[0];
+    a[o + 1] = p[1];
+    a[o + 2] = p[2];
+    a[o + 3] = q[0];
+    a[o + 4] = q[1];
+    a[o + 5] = q[2];
+    a[o + 6] = r[0];
+    a[o + 7] = r[1];
+    a[o + 8] = r[2];
+    this.n++;
+  }
+  data() {
+    return this.a.subarray(0, this.n * 9);
+  }
+}
+
+/** Rotation matrix (row-major 3x3) for Euler XYZ degrees: R = Rz * Ry * Rx, X applied first. */
+function rotationMatrix(rot) {
+  const d = Math.PI / 180;
+  const cx = Math.cos(rot[0] * d),
+    sx = Math.sin(rot[0] * d),
+    cy = Math.cos(rot[1] * d),
+    sy = Math.sin(rot[1] * d),
+    cz = Math.cos(rot[2] * d),
+    sz = Math.sin(rot[2] * d);
+  return [
+    cz * cy,
+    cz * sy * sx - sz * cx,
+    cz * sy * cx + sz * sx,
+    sz * cy,
+    sz * sy * sx + cz * cx,
+    sz * sy * cx - cz * sx,
+    -sy,
+    cy * sx,
+    cy * cx,
+  ];
+}
+
+function transformTriangles(d, pos, rot) {
+  const m = rotationMatrix(rot),
+    out = new Float64Array(d.length);
+  for (let i = 0; i < d.length; i += 3) {
+    const x = d[i],
+      y = d[i + 1],
+      z = d[i + 2];
+    out[i] = m[0] * x + m[1] * y + m[2] * z + pos[0];
+    out[i + 1] = m[3] * x + m[4] * y + m[5] * z + pos[1];
+    out[i + 2] = m[6] * x + m[7] * y + m[8] * z + pos[2];
+  }
+  return out;
+}
+
+function signedVolume(d) {
+  let v = 0;
+  for (let i = 0; i < d.length; i += 9) {
+    const ax = d[i],
+      ay = d[i + 1],
+      az = d[i + 2],
+      bx = d[i + 3],
+      by = d[i + 4],
+      bz = d[i + 5],
+      cx = d[i + 6],
+      cy = d[i + 7],
+      cz = d[i + 8];
+    v += ax * (by * cz - bz * cy) + ay * (bz * cx - bx * cz) + az * (bx * cy - by * cx);
+  }
+  return v / 6;
+}
+
+function flipWinding(d) {
+  for (let i = 0; i < d.length; i += 9)
+    for (let k = 0; k < 3; k++) {
+      const t = d[i + 3 + k];
+      d[i + 3 + k] = d[i + 6 + k];
+      d[i + 6 + k] = t;
+    }
+  return d;
+}
+
+function boundingBox(d) {
+  const min = [Infinity, Infinity, Infinity],
+    max = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < d.length; i += 3)
+    for (let k = 0; k < 3; k++) {
+      if (d[i + k] < min[k]) min[k] = d[i + k];
+      if (d[i + k] > max[k]) max[k] = d[i + k];
+    }
+  return { min, max, size: [max[0] - min[0], max[1] - min[1], max[2] - min[2]] };
+}
+
+/** Ear clipping over a simple polygon; returns index triples with CCW winding. */
+function triangulatePolygon(pts) {
+  const n = pts.length;
+  const idx = Array.from({ length: n }, (_, i) => i);
+  if (signedArea(pts) < 0) idx.reverse();
+  const area = (a, b, c) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+  const inside = (p, a, b, c) => area(a, b, p) >= 0 && area(b, c, p) >= 0 && area(c, a, p) >= 0;
+  const out = [];
+  let guard = 0;
+  while (idx.length > 3 && guard++ < 100000) {
+    let clipped = false;
+    for (let i = 0; i < idx.length; i++) {
+      const ia = idx[(i + idx.length - 1) % idx.length],
+        ib = idx[i],
+        ic = idx[(i + 1) % idx.length];
+      const a = pts[ia],
+        b = pts[ib],
+        c = pts[ic];
+      if (area(a, b, c) <= 1e-12) continue;
+      let ear = true;
+      for (const j of idx) {
+        if (j === ia || j === ib || j === ic) continue;
+        if (inside(pts[j], a, b, c)) {
+          ear = false;
+          break;
+        }
+      }
+      if (!ear) continue;
+      out.push([ia, ib, ic]);
+      idx.splice(i, 1);
+      clipped = true;
+      break;
+    }
+    if (!clipped) throw new Error('triangulation failed: polygon is not simple');
+  }
+  out.push([idx[0], idx[1], idx[2]]);
+  return out;
+}
+
+function box(b, size) {
+  const x = size[0] / 2,
+    y = size[1] / 2,
+    z = size[2] / 2;
+  const v = [
+    [-x, -y, -z],
+    [x, -y, -z],
+    [x, y, -z],
+    [-x, y, -z],
+    [-x, -y, z],
+    [x, -y, z],
+    [x, y, z],
+    [-x, y, z],
+  ];
+  const faces = [
+    [0, 3, 2, 1],
+    [4, 5, 6, 7],
+    [0, 1, 5, 4],
+    [1, 2, 6, 5],
+    [2, 3, 7, 6],
+    [3, 0, 4, 7],
+  ];
+  for (const f of faces) {
+    b.push(v[f[0]], v[f[1]], v[f[2]]);
+    b.push(v[f[0]], v[f[2]], v[f[3]]);
+  }
+}
+
+function extrude(b, profile, h) {
+  const tris = triangulatePolygon(profile);
+  const n = profile.length;
+  const order =
+    signedArea(profile) > 0
+      ? Array.from({ length: n }, (_, i) => i)
+      : Array.from({ length: n }, (_, i) => n - 1 - i);
+  const at = (i, z) => [profile[i][0], profile[i][1], z];
+  for (const t of tris) {
+    b.push(at(t[0], h), at(t[1], h), at(t[2], h));
+    b.push(at(t[2], 0), at(t[1], 0), at(t[0], 0));
+  }
+  for (let k = 0; k < n; k++) {
+    const i = order[k],
+      j = order[(k + 1) % n];
+    b.push(at(i, 0), at(j, 0), at(j, h));
+    b.push(at(i, 0), at(j, h), at(i, h));
+  }
+}
+
+function wedge(b, size) {
+  const sx = size[0],
+    sy = size[1],
+    sz = size[2];
+  const t = new TriBuffer(8);
+  // profile in (x, z), extruded along y; full height at the -X face
+  extrude(
+    t,
+    [
+      [-sx / 2, -sz / 2],
+      [sx / 2, -sz / 2],
+      [-sx / 2, sz / 2],
+    ],
+    sy,
+  );
+  const d = t.data();
+  // (x, y, z) -> (x, z - sy/2, y) is a reflection, so swap two corners to restore winding
+  const v = (i, k) => [d[i + k], d[i + k + 2] - sy / 2, d[i + k + 1]];
+  for (let i = 0; i < d.length; i += 9) b.push(v(i, 0), v(i, 6), v(i, 3));
+}
+
+function circle(n) {
+  const c = [];
+  for (let i = 0; i < n; i++) {
+    const a = (2 * Math.PI * i) / n;
+    c.push([Math.cos(a), Math.sin(a)]);
+  }
+  return c;
+}
+
+function cylinder(b, rb, rt, h, n) {
+  const c = circle(n),
+    z0 = -h / 2,
+    z1 = h / 2;
+  const B = c.map((p) => [rb * p[0], rb * p[1], z0]),
+    bot = [0, 0, z0],
+    top = [0, 0, z1];
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    b.push(bot, B[j], B[i]);
+  }
+  if (rt > 0) {
+    const T = c.map((p) => [rt * p[0], rt * p[1], z1]);
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      b.push(B[i], B[j], T[j]);
+      b.push(B[i], T[j], T[i]);
+      b.push(top, T[i], T[j]);
+    }
+  } else
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      b.push(B[i], B[j], top);
+    }
+}
+
+function sphere(b, r, n) {
+  const stacks = Math.max(3, Math.floor(n / 2));
+  const ring = (s) => {
+    const phi = (Math.PI * s) / stacks,
+      rr = r * Math.sin(phi),
+      z = r * Math.cos(phi);
+    return circle(n).map((p) => [rr * p[0], rr * p[1], z]);
+  };
+  const N = [0, 0, r],
+    S = [0, 0, -r];
+  let prev = ring(1);
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    b.push(N, prev[i], prev[j]);
+  }
+  for (let s = 2; s < stacks; s++) {
+    const cur = ring(s);
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      b.push(prev[i], cur[i], cur[j]);
+      b.push(prev[i], cur[j], prev[j]);
+    }
+    prev = cur;
+  }
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    b.push(S, prev[j], prev[i]);
+  }
+}
+
+function torus(b, R, r, n) {
+  const m = Math.max(8, Math.floor(n / 2));
+  const P = (i, j) => {
+    const u = (2 * Math.PI * (i % n)) / n,
+      v = (2 * Math.PI * (j % m)) / m,
+      w = R + r * Math.cos(v);
+    return [w * Math.cos(u), w * Math.sin(u), r * Math.sin(v)];
+  };
+  for (let i = 0; i < n; i++)
+    for (let j = 0; j < m; j++) {
+      const a = P(i, j),
+        q = P(i + 1, j),
+        c = P(i + 1, j + 1),
+        d = P(i, j + 1);
+      b.push(a, q, c);
+      b.push(a, c, d);
+    }
+}
+
+function lathe(b, profile, n) {
+  const c = circle(n),
+    m = profile.length;
+  for (let i = 0; i < m; i++) {
+    const r0 = profile[i][0],
+      z0 = profile[i][1],
+      r1 = profile[(i + 1) % m][0],
+      z1 = profile[(i + 1) % m][1];
+    if (r0 === 0 && r1 === 0) continue;
+    for (let j = 0; j < n; j++) {
+      const k = (j + 1) % n;
+      const A = [r0 * c[j][0], r0 * c[j][1], z0],
+        B = [r0 * c[k][0], r0 * c[k][1], z0],
+        C = [r1 * c[k][0], r1 * c[k][1], z1],
+        D = [r1 * c[j][0], r1 * c[j][1], z1];
+      if (r0 > 0) b.push(A, B, C);
+      if (r1 > 0) b.push(A, C, D);
+    }
+  }
+}
+
+function partVolume(p) {
+  switch (p.type) {
+    case 'box':
+      return p.size[0] * p.size[1] * p.size[2];
+    case 'wedge':
+      return (p.size[0] * p.size[1] * p.size[2]) / 2;
+    case 'cylinder': {
+      const rt = p.radiusTop ?? p.radius;
+      return (Math.PI * p.height * (p.radius ** 2 + p.radius * rt + rt ** 2)) / 3;
+    }
+    case 'cone':
+      return (Math.PI * p.radius ** 2 * p.height) / 3;
+    case 'sphere':
+      return (4 / 3) * Math.PI * p.radius ** 3;
+    case 'torus':
+      return 2 * Math.PI ** 2 * p.radius * p.tube ** 2;
+    case 'extrude':
+      return Math.abs(signedArea(p.profile)) * p.height;
+    case 'lathe': {
+      let s = 0;
+      const m = p.profile.length;
+      for (let i = 0; i < m; i++) {
+        const r0 = p.profile[i][0],
+          z0 = p.profile[i][1],
+          r1 = p.profile[(i + 1) % m][0],
+          z1 = p.profile[(i + 1) % m][1];
+        s += (r0 * z1 - r1 * z0) * (r0 + r1);
+      }
+      return (Math.abs(s) * Math.PI) / 3;
+    }
+    default:
+      return 0;
+  }
+}
+
+const GENERATORS = {
+  box: (b, p) => box(b, p.size),
+  wedge: (b, p) => wedge(b, p.size),
+  extrude: (b, p) => extrude(b, p.profile, p.height),
+  cylinder: (b, p, n) => cylinder(b, p.radius, p.radiusTop ?? p.radius, p.height, n),
+  cone: (b, p, n) => cylinder(b, p.radius, 0, p.height, n),
+  sphere: (b, p, n) => sphere(b, p.radius, n),
+  torus: (b, p, n) => torus(b, p.radius, p.tube, n),
+  lathe: (b, p, n) => lathe(b, p.profile, n),
+};
+
+function localTriangles(part) {
+  const gen = GENERATORS[part.type];
+  if (!gen) throw new Error(`no generator for type ${part.type}`);
+  const b = new TriBuffer(triangleCount(part));
+  gen(b, part, segmentsOf(part));
+  const d = b.data();
+  if (signedVolume(d) < 0) flipWinding(d);
+  return d;
+}
+
+function partToTriangles(part) {
+  return transformTriangles(localTriangles(part), part.pos, part.rot);
+}
+
+function meshChecks(d) {
+  const errors = [];
+  const q = (v) => {
+    const r = Math.round(v * 1e6) / 1e6;
+    return r === 0 ? '0' : String(r); // fold -0 and 1e-15 into one key
+  };
+  const key = (i) => `${q(d[i])},${q(d[i + 1])},${q(d[i + 2])}`;
+  const directed = new Map(),
+    star = new Map();
+  let zero = 0;
+  for (let i = 0; i < d.length; i += 9) {
+    const ux = d[i + 3] - d[i],
+      uy = d[i + 4] - d[i + 1],
+      uz = d[i + 5] - d[i + 2],
+      vx = d[i + 6] - d[i],
+      vy = d[i + 7] - d[i + 1],
+      vz = d[i + 8] - d[i + 2];
+    if (Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx) < 1e-9) {
+      zero++;
+      continue;
+    }
+    const k = [key(i), key(i + 3), key(i + 6)];
+    for (let e = 0; e < 3; e++) {
+      const a = k[e],
+        b = k[(e + 1) % 3],
+        c = k[(e + 2) % 3];
+      const dk = a + '|' + b;
+      directed.set(dk, (directed.get(dk) || 0) + 1);
+      if (!star.has(c)) star.set(c, new Map());
+      star.get(c).set(a, b); // opposite edge a -> b as seen from vertex c
+    }
+  }
+  if (zero) errors.push(`${zero} zero-area triangle(s)`);
+  let bad = 0;
+  for (const [dk, count] of directed) {
+    const [a, b] = dk.split('|');
+    if (count !== 1 || directed.get(b + '|' + a) !== 1) bad++;
+  }
+  if (bad) errors.push(`${bad} edge(s) not shared by exactly two opposite triangles`);
+  let pinched = 0;
+  for (const next of star.values()) {
+    const start = next.keys().next().value;
+    let cur = start,
+      steps = 0;
+    do {
+      cur = next.get(cur);
+      steps++;
+    } while (cur !== undefined && cur !== start && steps <= next.size);
+    if (cur !== start || steps !== next.size) pinched++;
+  }
+  if (pinched) errors.push(`${pinched} vertex(es) with a split fan (pinched)`);
+  const volume = signedVolume(d);
+  if (!(volume > 0)) errors.push(`signed volume ${volume.toFixed(3)} is not positive`);
+  return { ok: errors.length === 0, errors, volume };
+}
+
+// --- printcheck.js ---
+
+const SATURN3 = {
+  name: 'Elegoo Saturn 3 (12K)',
+  build: [218.88, 122.88, 250],
+  pixelUm: [19, 24],
+  layerUm: [10, 30, 50, 100],
+};
+const EPS = 0.01,
+  NEAR = 0.5;
+const f = (v) => v.toFixed(2);
+
+function pointSegDist(p, a, b) {
+  const dx = b[0] - a[0],
+    dy = b[1] - a[1],
+    l2 = dx * dx + dy * dy;
+  let t = l2 ? ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy));
+}
+
+/** Minimum distance from any vertex to any non-adjacent edge: a conservative local wall thickness. */
+function polygonThickness(pts) {
+  const n = pts.length;
+  let min = Infinity;
+  for (let i = 0; i < n; i++)
+    for (let j = 0; j < n; j++) {
+      if (j === i || (j + 1) % n === i) continue; // the two edges that touch vertex i
+      min = Math.min(min, pointSegDist(pts[i], pts[j], pts[(j + 1) % n]));
+    }
+  return min;
+}
+
+function minFeature(p) {
+  switch (p.type) {
+    case 'box':
+    case 'wedge':
+      return Math.min(...p.size);
+    case 'cylinder': {
+      const rt = p.radiusTop ?? p.radius;
+      return Math.min(2 * p.radius, rt > 0 ? 2 * rt : Infinity, p.height);
+    }
+    case 'cone':
+      return Math.min(2 * p.radius, p.height);
+    case 'sphere':
+      return 2 * p.radius;
+    case 'torus':
+      return 2 * p.tube;
+    case 'extrude':
+      return Math.min(p.height, polygonThickness(p.profile));
+    case 'lathe':
+      return polygonThickness(p.profile);
+    default:
+      return Infinity;
+  }
+}
+
+function buildItems(partList) {
+  return partList.parts.map((part) => {
+    const tris = partToTriangles(part);
+    return { part, tris, bbox: boundingBox(tris) };
+  });
+}
+
+// positive = gap, negative = overlap, per axis
+const gaps = (a, b) =>
+  [0, 1, 2].map((k) => Math.max(a.min[k], b.min[k]) - Math.min(a.max[k], b.max[k]));
+const axisAligned = (p) =>
+  p.type === 'box' && p.rot.every((r) => Math.abs(((r % 90) + 90) % 90) < 1e-6);
+// share of upper's footprint that lies over lower's footprint
+const xyOverlapFraction = (lower, upper) => {
+  const ox = Math.max(
+    0,
+    Math.min(lower.max[0], upper.max[0]) - Math.max(lower.min[0], upper.min[0]),
+  );
+  const oy = Math.max(
+    0,
+    Math.min(lower.max[1], upper.max[1]) - Math.max(lower.min[1], upper.min[1]),
+  );
+  const area = upper.size[0] * upper.size[1];
+  return area > 0 ? (ox * oy) / area : 0;
+};
+
+function contactGraph(items) {
+  const edges = [],
+    near = [];
+  for (let i = 0; i < items.length; i++)
+    for (let j = i + 1; j < items.length; j++) {
+      const g = gaps(items[i].bbox, items[j].bbox);
+      if (g.every((x) => x <= -EPS))
+        edges.push({ i, j, confirmed: axisAligned(items[i].part) && axisAligned(items[j].part) });
+      else if (g.every((x) => x <= NEAR)) near.push({ i, j, gap: Math.max(0, ...g) });
+    }
+  return { edges, near };
+}
+
+function mergeBoxes(boxes) {
+  const min = [Infinity, Infinity, Infinity],
+    max = [-Infinity, -Infinity, -Infinity];
+  for (const b of boxes)
+    for (let k = 0; k < 3; k++) {
+      min[k] = Math.min(min[k], b.min[k]);
+      max[k] = Math.max(max[k], b.max[k]);
+    }
+  return { min, max, size: [max[0] - min[0], max[1] - min[1], max[2] - min[2]] };
+}
+
+function runPrintChecks(items, { layerUm = 50, orientation = 'flat' } = {}) {
+  if (!items.length)
+    return {
+      checks: [{ id: 'empty', level: 'info', message: 'No parts yet' }],
+      bbox: null,
+      volumeMm3: 0,
+      layers: {},
+      worst: 'info',
+    };
+  const checks = [];
+  const bb = mergeBoxes(items.map((it) => it.bbox));
+  const [W, D, H] = SATURN3.build,
+    [sx, sy, sz] = bb.size;
+  if (sx <= W && sy <= D && sz <= H)
+    checks.push({
+      id: 'fit',
+      level: 'green',
+      message: `Fits the plate: ${f(sx)} x ${f(sy)} x ${f(sz)} mm`,
+    });
+  else if (sy <= W && sx <= D && sz <= H)
+    checks.push({
+      id: 'fit',
+      level: 'amber',
+      message: `Fits only rotated 90 deg about Z: ${f(sx)} x ${f(sy)} x ${f(sz)} mm`,
+    });
+  else
+    checks.push({
+      id: 'fit',
+      level: 'red',
+      message: `Too large: ${f(sx)} x ${f(sy)} x ${f(sz)} mm exceeds ${W} x ${D} x ${H} mm`,
+    });
+
+  for (const it of items) {
+    const m = minFeature(it.part);
+    if (m < 0.8)
+      checks.push({
+        id: 'feature:' + it.part.id,
+        level: 'red',
+        message: `${it.part.id}: thinnest feature ${f(m)} mm is under 0.8 mm`,
+      });
+    else if (m < 1.2)
+      checks.push({
+        id: 'feature:' + it.part.id,
+        level: 'amber',
+        message: `${it.part.id}: thinnest feature ${f(m)} mm is under 1.2 mm`,
+      });
+  }
+
+  const { edges, near } = contactGraph(items);
+  const parent = items.map((_, i) => i);
+  const find = (i) => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  for (const e of edges) parent[find(e.i)] = find(e.j);
+  const comps = new Map();
+  items.forEach((_, i) => {
+    const r = find(i);
+    if (!comps.has(r)) comps.set(r, []);
+    comps.get(r).push(i);
+  });
+  const grounded = (i) => items[i].bbox.min[2] <= EPS;
+  const confirmedAdj = items.map(() => []),
+    adj = items.map(() => []);
+  for (const e of edges) {
+    adj[e.i].push(e.j);
+    adj[e.j].push(e.i);
+    if (e.confirmed) {
+      confirmedAdj[e.i].push(e.j);
+      confirmedAdj[e.j].push(e.i);
+    }
+  }
+  const reached = new Set();
+  const queue = items.map((_, i) => i).filter(grounded);
+  queue.forEach((i) => reached.add(i));
+  while (queue.length) {
+    const i = queue.pop();
+    for (const j of confirmedAdj[i])
+      if (!reached.has(j)) {
+        reached.add(j);
+        queue.push(j);
+      }
+  }
+  let flagged = false;
+  const ids = (arr) => arr.map((i) => items[i].part.id).join(', ');
+  for (const members of comps.values()) {
+    if (!members.some(grounded)) {
+      flagged = true;
+      checks.push({
+        id: 'support:' + ids(members),
+        level: 'red',
+        message: `Unsupported group: ${ids(members)}`,
+      });
+      continue;
+    }
+    const unconfirmed = members.filter((i) => !reached.has(i));
+    if (unconfirmed.length) {
+      flagged = true;
+      checks.push({
+        id: 'contact:' + ids(unconfirmed),
+        level: 'amber',
+        message: `Contact not confirmed: ${ids(unconfirmed)}`,
+      });
+    }
+  }
+  if (!flagged)
+    checks.push({
+      id: 'support',
+      level: 'green',
+      message: 'All parts grounded through confirmed contact',
+    });
+  for (const nm of near)
+    checks.push({
+      id: `near:${items[nm.i].part.id}-${items[nm.j].part.id}`,
+      level: 'amber',
+      message: `Near miss: ${items[nm.i].part.id} and ${items[nm.j].part.id} are ${f(nm.gap)} mm apart and will not fuse`,
+    });
+
+  if (orientation === 'flat')
+    for (const [i, it] of items.entries()) {
+      if (it.bbox.min[2] <= EPS) continue;
+      const covered = adj[i]
+        .filter((j) => items[j].bbox.min[2] < it.bbox.min[2] - EPS)
+        .reduce((best, j) => Math.max(best, xyOverlapFraction(items[j].bbox, it.bbox)), 0);
+      if (covered < 0.5)
+        checks.push({
+          id: 'overhang:' + it.part.id,
+          level: 'amber',
+          message: `${it.part.id}: ${Math.round((1 - covered) * 100)}% of its footprint hangs over nothing, needs supports`,
+        });
+    }
+
+  const volumeMm3 = items.reduce((s, it) => s + partVolume(it.part), 0);
+  checks.push({
+    id: 'volume',
+    level: 'info',
+    message: `Summed primitive volume ${(volumeMm3 / 1000).toFixed(1)} mL (upper bound; overlaps counted twice)`,
+  });
+  const layers = Object.fromEntries(SATURN3.layerUm.map((um) => [um, Math.ceil(sz / (um / 1000))]));
+  checks.push({
+    id: 'layers',
+    level: 'info',
+    message: `${layers[layerUm]} layers at ${layerUm} um (${f(sz)} mm tall)`,
+  });
+  checks.push({
+    id: 'pixel',
+    level: 'info',
+    message: `XY pixel ${SATURN3.pixelUm[0]} x ${SATURN3.pixelUm[1]} um`,
+  });
+  const worst = checks.some((c) => c.level === 'red')
+    ? 'red'
+    : checks.some((c) => c.level === 'amber')
+      ? 'amber'
+      : 'green';
+  return { checks, bbox: bb, volumeMm3, layers, worst };
+}
+
+// --- stl.js ---
+
+function concatTriangles(list) {
+  let n = 0;
+  for (const d of list) n += d.length;
+  const out = new Float64Array(n);
+  let o = 0;
+  for (const d of list) {
+    out.set(d, o);
+    o += d.length;
+  }
+  return out;
+}
+
+function listToTriangles(partList) {
+  return concatTriangles(partList.parts.map(partToTriangles));
+}
+
+function writeBinaryStl(d, name = 'model') {
+  const n = d.length / 9,
+    buf = new ArrayBuffer(84 + 50 * n),
+    dv = new DataView(buf);
+  new Uint8Array(buf, 0, 80).set(new TextEncoder().encode(`ShapeCast ${name}`).slice(0, 80));
+  dv.setUint32(80, n, true);
+  let o = 84;
+  for (let i = 0; i < d.length; i += 9) {
+    const ux = d[i + 3] - d[i],
+      uy = d[i + 4] - d[i + 1],
+      uz = d[i + 5] - d[i + 2],
+      vx = d[i + 6] - d[i],
+      vy = d[i + 7] - d[i + 1],
+      vz = d[i + 8] - d[i + 2];
+    let nx = uy * vz - uz * vy,
+      ny = uz * vx - ux * vz,
+      nz = ux * vy - uy * vx;
+    const l = Math.hypot(nx, ny, nz) || 1;
+    nx /= l;
+    ny /= l;
+    nz /= l;
+    dv.setFloat32(o, nx, true);
+    dv.setFloat32(o + 4, ny, true);
+    dv.setFloat32(o + 8, nz, true);
+    o += 12;
+    for (let k = 0; k < 9; k++) {
+      dv.setFloat32(o, d[i + k], true);
+      o += 4;
+    }
+    dv.setUint16(o, 0, true);
+    o += 2;
+  }
+  return buf;
+}
+
+function readStlHeader(buf) {
+  const dv = new DataView(buf);
+  return {
+    header: new TextDecoder().decode(new Uint8Array(buf, 0, 80)).replace(/\0+$/, ''),
+    triangles: dv.getUint32(80, true),
+  };
+}
+
+// --- lifecycle.js ---
+function createRequestTracker() {
+  let projectId = null,
+    revisionId = 0;
+  return {
+    setProject(id) {
+      projectId = id;
+      revisionId = 0;
+    },
+    bump() {
+      revisionId++;
+      return revisionId;
+    },
+    token() {
+      return { projectId, revisionId };
+    },
+    isCurrent(t) {
+      return !!t && t.projectId === projectId && t.revisionId === revisionId;
+    },
+    get revisionId() {
+      return revisionId;
+    },
+  };
+}
+
+/**
+ * Generation-based save controller. `save(generation)` must snapshot the in-memory state
+ * synchronously before its first await; a completion only acknowledges its own generation.
+ */
+function createSaveController({
+  save,
+  debounceMs = 1500,
+  setTimer = setTimeout,
+  clearTimer = clearTimeout,
+  onChange = (_state) => {},
+}) {
+  let generation = 0,
+    savedGeneration = 0,
+    pendingUploads = 0,
+    inFlight = null,
+    timer = null,
+    lastError = null,
+    autosave = true;
+  const api = {
+    markChanged() {
+      generation++;
+      if (autosave) schedule();
+      notify();
+      return generation;
+    },
+    setPendingUploads(n) {
+      pendingUploads = n;
+      notify();
+    },
+    isDirty() {
+      return generation !== savedGeneration || pendingUploads > 0;
+    },
+    saveNow() {
+      if (timer) {
+        clearTimer(timer);
+        timer = null;
+      }
+      return run();
+    },
+    async drain(maxRounds = 10) {
+      for (let i = 0; i < maxRounds; i++) {
+        if (!api.isDirty()) return true;
+        await api.saveNow();
+        if (lastError || pendingUploads > 0) return false;
+      }
+      return !api.isDirty();
+    },
+    state() {
+      return {
+        generation,
+        savedGeneration,
+        pendingUploads,
+        saving: !!inFlight,
+        dirty: api.isDirty(),
+        error: lastError,
+      };
+    },
+    setAutosave(v) {
+      autosave = v;
+    },
+  };
+  const notify = () => onChange(api.state());
+  function schedule() {
+    if (timer) clearTimer(timer);
+    timer = setTimer(() => {
+      timer = null;
+      run();
+    }, debounceMs);
+  }
+  async function run() {
+    if (inFlight) return inFlight;
+    const gen = generation;
+    inFlight = (async () => {
+      try {
+        await save(gen);
+        if (gen > savedGeneration) savedGeneration = gen;
+        lastError = null;
+      } catch (e) {
+        lastError = e;
+      } finally {
+        inFlight = null;
+        notify();
+      }
+    })();
+    await inFlight;
+    if (autosave && !lastError && generation !== savedGeneration) schedule();
+  }
+  return api;
+}
+
+// --- prompts.js ---
+const SCHEMA_TEXT = `Output schema (JSON object, nothing else):
+{
+  "name": string (1-80 chars),
+  "units": "mm",
+  "parts": [ { "id": "a-z0-9_-", "type": one of box|cylinder|cone|sphere|torus|extrude|lathe|wedge, ...dims, "pos": [x,y,z], "rot": [rx,ry,rz] degrees, "role": "add" } ],
+  "assumptions": [ up to 20 short strings, each one estimated dimension or guess ],
+  "print": { "orientation": "flat" | "angled", "suggestedLayerUm": 10 | 30 | 50 | 100 }
+}
+Part dims (mm, 0.1 to 300; segments integer 3-256, default 64):
+- box: size [x,y,z]; local origin at the centre
+- cylinder: radius, height, optional radiusTop (0 makes a cone); axis is local Z, origin at the axis centre
+- cone: radius, height; apex at +Z
+- sphere: radius
+- torus: radius (ring), tube; ring lies in local XY
+- extrude: profile [[x,y],...] (simple polygon, 3-200 points, do not repeat the first point), height; extruded from local z=0 to z=height
+- lathe: profile [[r,z],...] revolved about local Z; r >= 0; every point with r = 0 must have a neighbour with r = 0 (touch the axis along an edge, never at one point)
+- wedge: size [x,y,z]; right-triangle prism, full height at the -X face, zero at +X
+pos is the world position of the part's local origin; rot is Euler XYZ in degrees (X first).
+Example:
+{"name":"phone stand","units":"mm","parts":[{"id":"base","type":"box","size":[70,60,4],"pos":[0,0,2],"rot":[0,0,0],"role":"add"},{"id":"back","type":"extrude","profile":[[0,0],[40,0],[40,3],[0,3]],"height":60,"pos":[-20,-28,2],"rot":[90,0,0],"role":"add"}],"assumptions":["overall height estimated at 60 mm, no scale reference given"],"print":{"orientation":"flat","suggestedLayerUm":50}}`;
+
+const RULES = `Design rules:
+- Additive primitives only (role "add"). Build the object from a few well-placed parts, like blocks.
+- Walls at least 1.2 mm thick. Parts that join must overlap by at least 0.5 mm so the shells fuse in the slicer; never leave a gap or an exact touch.
+- Keep the whole model inside 218 x 122 x 250 mm (Elegoo Saturn 3). Scale down proportionally if the real object is bigger, and say so in assumptions.
+- Put a flat, stable face on z = 0 (the build plate). Every part must be grounded or overlap a grounded part.
+- Every dimension you estimated goes in "assumptions" as its own string.
+- print.orientation is "flat" unless the object has large unsupported overhangs, then "angled".`;
+
+function builderPrompt({ brief, scaleRef, imageCount }) {
+  const photos =
+    imageCount > 0
+      ? `You are given ${imageCount} photo${imageCount === 1 ? '' : 's'} of the object or sketch to reproduce.`
+      : 'No photos are given; work from the brief alone.';
+  const scale =
+    scaleRef && scaleRef.trim()
+      ? `Scale reference: ${scaleRef.trim()}. Use it to fix real dimensions.`
+      : 'No scale reference was given: estimate real-world dimensions and list every estimate in assumptions.';
+  return `You are a mechanical designer producing a resin-printable 3D model for an Elegoo Saturn 3 from photos, a sketch, or a description.
+${photos}
+${scale}
+Brief from the user: ${brief && brief.trim() ? brief.trim() : '(none)'}
+
+${RULES}
+
+${SCHEMA_TEXT}
+
+Reply with only the JSON object.`;
+}
+
+function editorPrompt({ partList, request }) {
+  return `You are editing an existing resin-printable 3D model (Elegoo Saturn 3). Apply the user's request and return the complete replacement part list; keep every part you were not asked to change, keep ids stable, and describe what changed in "assumptions".
+
+Current part list:
+${JSON.stringify(partList)}
+
+User request: ${request}
+
+${RULES}
+
+${SCHEMA_TEXT}
+
+Reply with only the JSON object.`;
+}
+
+// --- exportbundle.js ---
+function slugify(name) {
+  return (
+    String(name)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 40) || 'model'
+  );
+}
+
+function truncateRequest(text) {
+  return String(text ?? '').slice(0, 2000);
+}
+
+function readmeText({ list, result, layerUm }) {
+  const size = result?.bbox ? result.bbox.size.map((v) => v.toFixed(2)).join(' x ') + ' mm' : 'n/a';
+  const lines = [
+    `ShapeCast export: ${list.name}`,
+    '',
+    'Target printer: Elegoo Saturn 3 (12K), slicer Chitubox. Units mm, Z up.',
+    `Bounding box: ${size}`,
+    `Suggested orientation: ${list.print.orientation}`,
+    `Layer height: ${layerUm} um`,
+    `Summed primitive volume: ${result ? (result.volumeMm3 / 1000).toFixed(1) : '?'} mL (upper bound; overlaps counted twice)`,
+    '',
+    'Assumptions made by the model:',
+    ...(list.assumptions.length ? list.assumptions.map((a) => `- ${a}`) : ['- none']),
+    '',
+    'Print checks at export time:',
+    ...(result?.checks ?? [])
+      .filter((c) => c.level !== 'info')
+      .map((c) => `- [${c.level}] ${c.message}`),
+    '',
+    'Open the .stl in Chitubox, keep the parts as one object, add supports where the checks say so, slice at the layer height above.',
+  ];
+  return lines.join('\n') + '\n';
+}
+
+// --- model.js ---
+
+const FIELDS = {
+  box: ['size', 'pos', 'rot'],
+  wedge: ['size', 'pos', 'rot'],
+  cylinder: ['radius', 'radiusTop', 'height', 'segments', 'pos', 'rot'],
+  cone: ['radius', 'height', 'segments', 'pos', 'rot'],
+  sphere: ['radius', 'segments', 'pos', 'rot'],
+  torus: ['radius', 'tube', 'segments', 'pos', 'rot'],
+  extrude: ['height', 'pos', 'rot'],
+  lathe: ['segments', 'pos', 'rot'],
+};
+const DOC_LIMIT = 200 * 1024;
+const META = { name: 80, brief: 4000, scaleRef: 300, photos: 8 };
+const clone = (o) => JSON.parse(JSON.stringify(o));
+
+function applyFieldEdit(list, partId, field, index, raw) {
+  const text = String(raw).trim(),
+    num = Number(text);
+  const label = `${partId}.${field}${index === null || index === undefined ? '' : `[${index}]`}`;
+  if (text === '' || !Number.isFinite(num)) return { ok: false, error: `${label}: not a number` };
+  const next = clone(list),
+    part = next.parts.find((p) => p.id === partId);
+  if (!part) return { ok: false, error: `${partId}: no such part` };
+  if (index === null || index === undefined) part[field] = num;
+  else {
+    if (!Array.isArray(part[field])) return { ok: false, error: `${label}: not a tuple` };
+    part[field][index] = num;
+  }
+  const v = validatePartList(next);
+  return v.ok ? { ok: true, list: next } : { ok: false, error: v.errors[0] };
+}
+
+function removePart(list, partId) {
+  const next = clone(list);
+  next.parts = next.parts.filter((p) => p.id !== partId);
+  const v = validatePartList(next);
+  return v.ok ? { ok: true, list: next } : { ok: false, error: v.errors[0] };
+}
+
+function prepareImages(files, imageLimits) {
+  const images = [],
+    rejected = [];
+  for (const f of files) {
+    if (!imageLimits)
+      rejected.push({ name: f.name, reason: 'this view cannot send photos to Claude' });
+    else if (!imageLimits.mediaTypes.includes(f.type))
+      rejected.push({ name: f.name, reason: `type ${f.type || 'unknown'} not accepted` });
+    else if (f.size > imageLimits.maxInputBytes)
+      rejected.push({
+        name: f.name,
+        reason: `photo too large (${(f.size / 1048576).toFixed(1)} MB, limit ${Math.round(imageLimits.maxInputBytes / 1048576)} MB)`,
+      });
+    else if (images.length >= imageLimits.maxCount)
+      rejected.push({ name: f.name, reason: `only ${imageLimits.maxCount} photos per build` });
+    else images.push(f);
+  }
+  return { images, rejected };
+}
+
+function documentBytes(doc) {
+  return new TextEncoder().encode(JSON.stringify(doc)).length;
+}
+
+function checkDocumentSizes({ projectDoc, revisionDoc }) {
+  if (projectDoc && documentBytes(projectDoc) > DOC_LIMIT)
+    return { ok: false, error: 'Project too large to save (over 200 KiB)' };
+  if (revisionDoc && documentBytes(revisionDoc) > DOC_LIMIT)
+    return { ok: false, error: 'Revision too large to save (over 200 KiB)' };
+  return { ok: true };
+}
+
+function projectDocument(p) {
+  return {
+    name: String(p.name).slice(0, META.name),
+    brief: String(p.brief ?? '').slice(0, META.brief),
+    scaleRef: String(p.scaleRef ?? '').slice(0, META.scaleRef),
+    photoAssetIds: (p.photoAssetIds ?? []).slice(0, META.photos),
+    current: p.current,
+    currentRevisionId: p.currentRevisionId ?? null,
+    createdAt: p.createdAt,
+    updatedAt: p.updatedAt,
+  };
+}
+
+const SAMPLE_LIST = {
+  name: 'example: block and catapult arm',
+  units: 'mm',
+  parts: [
+    {
+      id: 'block',
+      type: 'box',
+      size: [40, 40, 40],
+      pos: [-60, 0, 20],
+      rot: [0, 0, 0],
+      role: 'add',
+    },
+    { id: 'arm', type: 'box', size: [120, 8, 6], pos: [30, 0, 3], rot: [0, 0, 0], role: 'add' },
+    {
+      id: 'cup',
+      type: 'lathe',
+      profile: [
+        [0, 0],
+        [12, 0],
+        [12, 2],
+        [10, 2],
+        [10, 9],
+        [0, 9],
+      ],
+      pos: [82, 0, 5.5],
+      rot: [0, 0, 0],
+      role: 'add',
+    },
+    {
+      id: 'pivot',
+      type: 'cylinder',
+      radius: 5,
+      height: 14,
+      pos: [10, 0, 5],
+      rot: [90, 0, 0],
+      role: 'add',
+    },
+  ],
+  assumptions: ['example model: the 40 mm block is the scale reference from the catapult video'],
+  print: { orientation: 'flat', suggestedLayerUm: 50 },
+};
+
+// --- viewport.js ---
+
+const cssVar = (name, fallback) => {
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return v || fallback;
+};
+
+/** Three.js viewport with a true-size Saturn 3 plate. Returns null when THREE or WebGL is missing. */
+function createViewport(canvas, { onSelect = (_id) => {} } = {}) {
+  if (typeof THREE === 'undefined') return null;
+  let renderer;
+  try {
+    renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  } catch {
+    return null;
+  }
+  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(40, 1, 1, 6000);
+  camera.up.set(0, 0, 1);
+  const target = new THREE.Vector3(0, 0, 30);
+  let theta = -0.9,
+    phi = 1.05,
+    dist = 420,
+    needsRender = true;
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 0.9));
+  const sun = new THREE.DirectionalLight(0xffffff, 0.8);
+  sun.position.set(200, -300, 400);
+  scene.add(sun);
+
+  const [W, D, H] = SATURN3.build;
+  const plateMat = new THREE.MeshBasicMaterial({
+    transparent: true,
+    opacity: 0.25,
+    side: THREE.DoubleSide,
+  });
+  const plate = new THREE.Mesh(new THREE.PlaneGeometry(W, D), plateMat);
+  plate.position.z = -0.02;
+  scene.add(plate);
+  const gridPts = [];
+  for (let x = -W / 2; x <= W / 2 + 1e-6; x += 10) gridPts.push(x, -D / 2, 0, x, D / 2, 0);
+  for (let y = -D / 2; y <= D / 2 + 1e-6; y += 10) gridPts.push(-W / 2, y, 0, W / 2, y, 0);
+  const gridGeo = new THREE.BufferGeometry();
+  gridGeo.setAttribute('position', new THREE.Float32BufferAttribute(gridPts, 3));
+  const gridMat = new THREE.LineBasicMaterial({ transparent: true, opacity: 0.5 });
+  scene.add(new THREE.LineSegments(gridGeo, gridMat));
+  const ghostMat = new THREE.LineBasicMaterial({ transparent: true, opacity: 0.35 });
+  const ghost = new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.BoxGeometry(W, D, H)),
+    ghostMat,
+  );
+  ghost.position.z = H / 2;
+  scene.add(ghost);
+
+  const group = new THREE.Group();
+  scene.add(group);
+  const colors = { base: 0x8a8f99, accent: 0xd98c1f, failed: 0xb3261e };
+  function setTheme() {
+    const hex = (v) => parseInt(v.replace('#', ''), 16);
+    plateMat.color.setHex(hex(cssVar('--plate', '#9aa0a6')));
+    gridMat.color.setHex(hex(cssVar('--grid', '#9aa0a6')));
+    ghostMat.color.setHex(hex(cssVar('--grid', '#9aa0a6')));
+    colors.base = hex(cssVar('--part', '#8a8f99'));
+    colors.accent = hex(cssVar('--accent', '#d98c1f'));
+    colors.failed = hex(cssVar('--red', '#b3261e'));
+    needsRender = true;
+  }
+  function setItems(items, selectedId) {
+    for (const m of [...group.children]) {
+      group.remove(m);
+      m.geometry.dispose();
+      m.material.dispose();
+    }
+    for (const it of items) {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(Float32Array.from(it.tris), 3));
+      geo.computeVertexNormals();
+      const color = it.failed
+        ? colors.failed
+        : it.part.id === selectedId
+          ? colors.accent
+          : colors.base;
+      const mesh = new THREE.Mesh(
+        geo,
+        new THREE.MeshStandardMaterial({ color, roughness: 0.6, metalness: 0.05 }),
+      );
+      mesh.userData.id = it.part.id;
+      group.add(mesh);
+    }
+    needsRender = true;
+  }
+  function updateCamera() {
+    camera.position.set(
+      target.x + dist * Math.sin(phi) * Math.cos(theta),
+      target.y + dist * Math.sin(phi) * Math.sin(theta),
+      target.z + dist * Math.cos(phi),
+    );
+    camera.lookAt(target);
+    needsRender = true;
+  }
+  function fit(bbox) {
+    if (!bbox) return;
+    target.set(
+      (bbox.min[0] + bbox.max[0]) / 2,
+      (bbox.min[1] + bbox.max[1]) / 2,
+      (bbox.min[2] + bbox.max[2]) / 2,
+    );
+    dist = Math.max(...bbox.size) * 1.9 + 40;
+    updateCamera();
+  }
+  function view(name) {
+    if (name === 'top') {
+      theta = -Math.PI / 2;
+      phi = 0.001;
+    } else if (name === 'front') {
+      theta = -Math.PI / 2;
+      phi = Math.PI / 2 - 0.001;
+    } else {
+      theta = -0.9;
+      phi = 1.05;
+    }
+    updateCamera();
+  }
+  function resize() {
+    const w = canvas.clientWidth || 300,
+      h = canvas.clientHeight || 300;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    needsRender = true;
+  }
+  let down = null,
+    moved = false;
+  canvas.addEventListener('pointerdown', (e) => {
+    down = { x: e.clientX, y: e.clientY, b: e.button, shift: e.shiftKey };
+    moved = false;
+    canvas.setPointerCapture(e.pointerId);
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!down) return;
+    const dx = e.clientX - down.x,
+      dy = e.clientY - down.y;
+    down.x = e.clientX;
+    down.y = e.clientY;
+    if (Math.abs(dx) + Math.abs(dy) > 1) moved = true;
+    if (down.b === 0 && !down.shift) {
+      theta -= dx * 0.006;
+      phi = Math.min(Math.PI - 0.02, Math.max(0.02, phi - dy * 0.006));
+    } else {
+      const right = new THREE.Vector3()
+        .crossVectors(camera.getWorldDirection(new THREE.Vector3()), camera.up)
+        .normalize();
+      target.addScaledVector(right, -dx * dist * 0.0015);
+      target.addScaledVector(camera.up, dy * dist * 0.0015);
+    }
+    updateCamera();
+  });
+  canvas.addEventListener('pointerup', (e) => {
+    if (down && !moved) {
+      const r = canvas.getBoundingClientRect();
+      const ndc = new THREE.Vector2(
+        ((e.clientX - r.left) / r.width) * 2 - 1,
+        -((e.clientY - r.top) / r.height) * 2 + 1,
+      );
+      const ray = new THREE.Raycaster();
+      ray.setFromCamera(ndc, camera);
+      const hit = ray.intersectObjects(group.children)[0];
+      onSelect(hit ? hit.object.userData.id : null);
+    }
+    down = null;
+  });
+  canvas.addEventListener(
+    'wheel',
+    (e) => {
+      e.preventDefault();
+      dist = Math.min(4000, Math.max(20, dist * Math.exp(e.deltaY * 0.0012)));
+      updateCamera();
+    },
+    { passive: false },
+  );
+  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+  new ResizeObserver(resize).observe(canvas.parentElement);
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', setTheme);
+  function loop() {
+    if (needsRender) {
+      renderer.render(scene, camera);
+      needsRender = false;
+    }
+    requestAnimationFrame(loop);
+  }
+  setTheme();
+  resize();
+  updateCamera();
+  loop();
+  return { setItems, fit, view, resize, setTheme };
+}
+
 // --- app.js ---
 function init() {
   document.getElementById('app').textContent = 'ShapeCast';

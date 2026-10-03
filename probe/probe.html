@@ -1,0 +1,43 @@
+<title>ShapeCast Probe</title>
+<style>
+:root{--bg:#f6f5f2;--fg:#1d1d1b;--ok:#2d7d46;--bad:#b3261e}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#1b1b19;--fg:#ece9e2;--ok:#5fc27d;--bad:#ff6b61;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#1b1b19;--fg:#ece9e2;--ok:#5fc27d;--bad:#ff6b61;color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font:14px system-ui;padding-block:16px;padding-inline:16px}
+li{margin-block:6px}.ok{color:var(--ok)}.bad{color:var(--bad)}
+</style>
+<h1>ShapeCast Phase 0 probe</h1>
+<p>Open on the Pixel and the Surface. Screenshot the whole list, then tap the camera test and the zip button.</p>
+<ul id="out"></ul>
+<label>Camera test <input id="cam" type="file" accept="image/*" capture="environment"></label>
+<p id="camres"></p>
+<button id="zip">Save a 1 KB zip</button> <span id="zipres"></span>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+const out = document.getElementById('out');
+const row = (label, ok, detail) => { const li = document.createElement('li'); li.className = ok ? 'ok' : 'bad'; li.textContent = `${label}: ${ok ? 'OK' : 'NO'} ${detail ?? ''}`; out.append(li); };
+row('typeof THREE', typeof THREE === 'object', typeof THREE === 'object' ? 'r' + THREE.REVISION : '');
+row('typeof JSZip', typeof JSZip === 'function');
+row('user agent', true, navigator.userAgent);
+(async () => {
+  const names = ['sample', 'downloads', 'db', 'assets', 'user'];
+  const caps = {};
+  for (const n of names) { caps[n] = (await window.claude?.use(n)) ?? null; row(`use("${n}")`, caps[n] !== null); }
+  if (caps.sample) { const lim = await caps.sample.limits().catch(() => null); row('sample.limits().images', !!lim?.images, JSON.stringify(lim?.images)); row('sample.limits().tools', !!lim?.tools); }
+  if (caps.user) { const id = await caps.user.id().catch(() => null); row('user.id()', !!id, id ? 'present' : 'null'); }
+  if (caps.db && caps.user) {
+    try { const uid = await caps.user.id(); const ws = caps.db.doc('data/users/' + uid + '/workspace'); const p = ws.collection('projects').doc('probe'); const r = p.collection('revisions').doc('r1'); row('db refs', true, `${ws.path} | ${p.path} | ${r.path}`); }
+    catch (e) { row('db refs', false, String(e)); }
+  }
+  document.getElementById('zip').onclick = async () => {
+    const res = document.getElementById('zipres');
+    if (!caps.downloads) { res.textContent = 'downloads unavailable'; return; }
+    const z = new JSZip(); z.file('hello.txt', 'x'.repeat(1024));
+    const blob = await z.generateAsync({ type: 'blob' });
+    try { const r = await caps.downloads.save({ filename: 'probe.zip', data: blob }); res.textContent = r.status; }
+    catch (e) { res.textContent = 'error ' + (e && e.code); }
+  };
+})();
+document.getElementById('cam').onchange = (e) => { const f = e.target.files[0]; document.getElementById('camres').textContent = f ? `got ${f.type} ${f.size} bytes` : 'no file'; };
+</script>

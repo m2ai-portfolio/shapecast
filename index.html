@@ -1,0 +1,23 @@
+<title>ShapeCast</title>
+<style>
+  :root {
+    --bg: #f6f5f2;
+    --fg: #1d1d1b;
+  }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+  }
+</style>
+<div id="app">ShapeCast scaffold</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+'use strict';
+// --- app.js ---
+function init() {
+  document.getElementById('app').textContent = 'ShapeCast';
+}
+if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded', init);
+
+</script>

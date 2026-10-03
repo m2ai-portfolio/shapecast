@@ -1,0 +1,558 @@
+<title>ShapeCast</title>
+<style>
+  /* layout: three columns (capture | viewport | parts and print) that stack at phone width; the viewport is the hero */
+  :root {
+    --bg: #f3f2ee;
+    --fg: #1f1f1c;
+    --muted: #6b6a64;
+    --panel: #ffffff;
+    --line: #d9d6cd;
+    --accent: #c97a12;
+    --accent-ink: #ffffff;
+    --red: #b3261e;
+    --amber: #b86e00;
+    --green: #2d7d46;
+    --info: #4a5a73;
+    --plate: #b9b5aa;
+    --grid: #8e8a80;
+    --part: #8a8f99;
+    --font-ui: 'IBM Plex Sans', system-ui, sans-serif;
+    --font-num: 'IBM Plex Mono', ui-monospace, monospace;
+    --font-display: 'Barlow Condensed', 'Arial Narrow', sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) {
+      --bg: #17181a;
+      --fg: #ebe9e3;
+      --muted: #9a9890;
+      --panel: #202226;
+      --line: #34373d;
+      --accent: #e0912a;
+      --accent-ink: #1a1a1a;
+      --red: #ff6b61;
+      --amber: #f0a73a;
+      --green: #5fc27d;
+      --info: #9fb4d6;
+      --plate: #3a3d44;
+      --grid: #5a5e66;
+      --part: #a7adb8;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme='dark'] {
+    --bg: #17181a;
+    --fg: #ebe9e3;
+    --muted: #9a9890;
+    --panel: #202226;
+    --line: #34373d;
+    --accent: #e0912a;
+    --accent-ink: #1a1a1a;
+    --red: #ff6b61;
+    --amber: #f0a73a;
+    --green: #5fc27d;
+    --info: #9fb4d6;
+    --plate: #3a3d44;
+    --grid: #5a5e66;
+    --part: #a7adb8;
+    color-scheme: dark;
+  }
+  html,
+  body {
+    height: 100%;
+  }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font: 14px/1.45 var(--font-ui);
+    padding-block: 0;
+    padding-inline: 16px;
+  }
+  h1 {
+    font: 600 28px/1 var(--font-display);
+    letter-spacing: 0.02em;
+    margin: 0;
+    text-wrap: balance;
+  }
+  h2 {
+    font: 600 13px/1.2 var(--font-ui);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    margin: 0 0 8px;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding-block: 12px;
+    border-bottom: 1px solid var(--line);
+    flex-wrap: wrap;
+  }
+  header .sub {
+    color: var(--muted);
+    font-size: 12px;
+  }
+  main {
+    display: grid;
+    grid-template-columns: 300px minmax(0, 1fr) 340px;
+    gap: 16px;
+    padding-block: 16px;
+  }
+  @media (max-width: 1000px) {
+    main {
+      grid-template-columns: 1fr;
+    }
+  }
+  section.col {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-width: 0;
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 12px;
+  }
+  label {
+    display: block;
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+  input,
+  textarea,
+  select,
+  button {
+    font: inherit;
+    color: inherit;
+  }
+  input[type='text'],
+  textarea,
+  select {
+    width: 100%;
+    box-sizing: border-box;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 6px 8px;
+  }
+  textarea {
+    min-height: 72px;
+    resize: vertical;
+  }
+  button {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 6px 10px;
+    cursor: pointer;
+  }
+  button.primary {
+    background: var(--accent);
+    color: var(--accent-ink);
+    border-color: var(--accent);
+    font-weight: 600;
+  }
+  button:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  button:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+  .row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .well {
+    border: 1px dashed var(--line);
+    border-radius: 6px;
+    padding: 10px;
+    text-align: center;
+    color: var(--muted);
+  }
+  .well.over {
+    border-color: var(--accent);
+  }
+  .thumbs {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+    justify-content: center;
+  }
+  .thumb {
+    position: relative;
+    width: 64px;
+    height: 64px;
+    border-radius: 4px;
+    overflow: hidden;
+    border: 1px solid var(--line);
+  }
+  .thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .thumb button {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    padding: 0 5px;
+    line-height: 18px;
+    font-size: 12px;
+  }
+  .thumb.pending::after {
+    content: 'not uploaded';
+    position: absolute;
+    inset: auto 0 0 0;
+    background: var(--amber);
+    color: #000;
+    font-size: 10px;
+    text-align: center;
+  }
+  #viewWrap {
+    position: relative;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    min-height: 420px;
+    height: min(70vh, 720px);
+    overflow: hidden;
+  }
+  #viewport {
+    width: 100%;
+    height: 100%;
+    display: block;
+    touch-action: none;
+  }
+  .viewbar {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    display: flex;
+    gap: 6px;
+  }
+  #bboxReadout {
+    position: absolute;
+    right: 10px;
+    bottom: 8px;
+    font: 12px var(--font-num);
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  #viewNotice {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    color: var(--muted);
+    padding: 16px;
+    text-align: center;
+  }
+  #status {
+    min-height: 20px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .chat {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 260px;
+    overflow: auto;
+  }
+  .msg {
+    padding: 6px 8px;
+    border-radius: 4px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    font-size: 13px;
+  }
+  .msg.user {
+    border-color: var(--accent);
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  th {
+    text-align: left;
+    color: var(--muted);
+    font-weight: 500;
+    padding: 4px 2px;
+  }
+  td {
+    padding: 3px 2px;
+    vertical-align: top;
+    border-top: 1px solid var(--line);
+  }
+  td input {
+    width: 62px;
+    font: 12px var(--font-num);
+    font-variant-numeric: tabular-nums;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 2px 4px;
+    color: inherit;
+  }
+  tr.sel td {
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+  }
+  .tuple {
+    display: flex;
+    gap: 2px;
+    align-items: center;
+    margin-block: 1px;
+  }
+  .tuple .small {
+    width: 58px;
+    flex: none;
+  }
+  .chips {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .chip {
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+    font-size: 12px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--line);
+  }
+  .chip::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--info);
+    flex: none;
+    transform: translateY(1px);
+  }
+  .chip.red::before {
+    background: var(--red);
+  }
+  .chip.amber::before {
+    background: var(--amber);
+  }
+  .chip.green::before {
+    background: var(--green);
+  }
+  .assume {
+    border-left: 3px solid var(--amber);
+    padding: 6px 10px;
+    font-size: 13px;
+    background: color-mix(in srgb, var(--amber) 10%, transparent);
+    border-radius: 0 4px 4px 0;
+  }
+  .assume ul {
+    margin: 4px 0 0 16px;
+    padding: 0;
+  }
+  .banner {
+    padding: 8px 10px;
+    border-radius: 4px;
+    font-size: 13px;
+    border: 1px solid var(--line);
+    margin-top: 10px;
+  }
+  .banner.error {
+    border-color: var(--red);
+    color: var(--red);
+  }
+  .banner.warn {
+    border-color: var(--amber);
+  }
+  .hidden {
+    display: none !important;
+  }
+  details summary {
+    cursor: pointer;
+    color: var(--muted);
+    font-size: 12px;
+  }
+  pre {
+    white-space: pre-wrap;
+    word-break: break-word;
+    font: 11px var(--font-num);
+    max-height: 200px;
+    overflow: auto;
+  }
+  .small {
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .num {
+    font-family: var(--font-num);
+    font-variant-numeric: tabular-nums;
+  }
+  .inline-label {
+    display: inline;
+    color: var(--accent);
+    cursor: pointer;
+  }
+  .mt {
+    margin-top: 10px;
+  }
+</style>
+<link
+  rel="stylesheet"
+  href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600&family=IBM+Plex+Sans:wght@400;600&family=IBM+Plex+Mono&display=swap"
+/>
+<header>
+  <div>
+    <h1>ShapeCast</h1>
+    <div class="sub">Photo, sketch or prompt to a Saturn 3 resin print</div>
+  </div>
+  <div class="row">
+    <select id="projectSelect" aria-label="Project" style="width: auto">
+      <option value="">New project</option>
+    </select>
+    <button id="newProjectBtn">New</button>
+    <span id="saveState" class="small">local only</span>
+  </div>
+</header>
+<div id="localBanner" class="banner warn hidden">
+  Not signed in to Claude: this session is local only and will not sync.
+</div>
+<div id="message" class="banner error hidden" role="alert"></div>
+<div id="switchDialog" class="banner warn hidden">
+  <span id="switchText">Unsaved changes.</span>
+  <span class="row mt"
+    ><button id="switchSave" class="primary">Save and switch</button
+    ><button id="switchDiscard">Discard and switch</button
+    ><button id="switchStay">Stay</button></span
+  >
+</div>
+<main>
+  <section class="col">
+    <div class="card">
+      <h2>Capture</h2>
+      <div id="dropWell" class="well">
+        Drop photos here or
+        <label class="inline-label"
+          ><input
+            id="photoInput"
+            type="file"
+            accept="image/*"
+            capture="environment"
+            multiple
+            hidden
+          />take / choose a photo</label
+        >
+        <div id="photoNote" class="small"></div>
+        <div id="thumbs" class="thumbs"></div>
+      </div>
+      <label for="scaleRef" class="mt">Scale reference</label>
+      <input id="scaleRef" type="text" maxlength="300" placeholder="the coin is 24.26 mm across" />
+      <label for="brief" class="mt">Brief</label>
+      <textarea
+        id="brief"
+        maxlength="4000"
+        placeholder="a stand for my phone, slot 12 mm deep, 10 degree lean"
+      ></textarea>
+      <div class="row mt">
+        <button id="buildBtn" class="primary">Build model</button
+        ><button id="stopBtn" class="hidden">Stop</button>
+      </div>
+      <div id="status"></div>
+    </div>
+    <div class="card">
+      <h2>Revise with Claude</h2>
+      <div id="chatLog" class="chat"></div>
+      <div class="row mt">
+        <input
+          id="chatInput"
+          type="text"
+          maxlength="2000"
+          placeholder="make the slot 2 mm wider"
+          style="flex: 1"
+        /><button id="sendBtn">Send</button>
+      </div>
+      <div id="staleCard" class="banner warn hidden">
+        <span id="staleText"></span>
+        <span class="row mt"
+          ><button id="staleApply">Apply anyway</button
+          ><button id="staleDiscard">Discard</button></span
+        >
+      </div>
+    </div>
+  </section>
+  <section class="col">
+    <div id="viewWrap">
+      <canvas id="viewport"></canvas>
+      <div class="viewbar">
+        <button id="fitBtn">Fit</button><button id="isoBtn">Iso</button
+        ><button id="topBtn">Top</button><button id="frontBtn">Front</button>
+      </div>
+      <div id="bboxReadout"></div>
+      <div id="viewNotice" class="hidden">
+        3D preview unavailable in this browser. The parts table and export still work.
+      </div>
+    </div>
+  </section>
+  <section class="col">
+    <div class="card">
+      <h2>Parts</h2>
+      <div class="row" style="margin-bottom: 8px">
+        <label for="projectName" style="margin: 0">Name</label
+        ><input id="projectName" type="text" maxlength="80" style="flex: 1" />
+      </div>
+      <div style="overflow-x: auto">
+        <table id="partsTable">
+          <thead>
+            <tr>
+              <th>id</th>
+              <th>type</th>
+              <th>dims (mm, deg)</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+    <div id="assumptions" class="assume hidden"></div>
+    <div class="card">
+      <h2>Print check <span class="small">Saturn 3</span></h2>
+      <div class="row" style="margin-bottom: 8px">
+        <label for="layerSelect" style="margin: 0">Layer</label
+        ><select id="layerSelect" style="width: auto">
+          <option value="10">10 um</option>
+          <option value="30">30 um</option>
+          <option value="50" selected>50 um</option>
+          <option value="100">100 um</option>
+        </select>
+      </div>
+      <div id="checks" class="chips"></div>
+      <div class="row mt">
+        <button id="exportBtn" class="primary">Export .zip (STL)</button
+        ><button id="exportJsonBtn">Export JSON</button>
+      </div>
+      <div id="exportNote" class="small"></div>
+    </div>
+    <details class="card">
+      <summary>Raw reply / debug</summary>
+      <pre id="rawReply"></pre>
+    </details>
+  </section>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<!-- @inline-modules -->

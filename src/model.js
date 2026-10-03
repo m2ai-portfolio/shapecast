@@ -62,6 +62,7 @@ export function documentBytes(doc) {
   return new TextEncoder().encode(JSON.stringify(doc)).length;
 }
 
+/** @param {{ projectDoc?: any, revisionDoc?: any }} docs */
 export function checkDocumentSizes({ projectDoc, revisionDoc }) {
   if (projectDoc && documentBytes(projectDoc) > DOC_LIMIT)
     return { ok: false, error: 'Project too large to save (over 200 KiB)' };

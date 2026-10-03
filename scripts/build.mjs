@@ -17,9 +17,13 @@ export const MODULES = [
 const ALLOWED_HOST = 'https://cdnjs.cloudflare.com/';
 
 export function stripModuleSyntax(source) {
-  return source
+  // drop every static import, including prettier's multi-line `import {\n a,\n b,\n} from '...';`
+  const withoutImports = source.replace(
+    /^\s*import\s[\s\S]*?\sfrom\s+['"][^'"]+['"];?[ \t]*\n?/gm,
+    '',
+  );
+  return withoutImports
     .split('\n')
-    .filter((line) => !/^\s*import\s.*from\s+['"].*['"];?\s*$/.test(line))
     .map((line) => line.replace(/^export\s+(default\s+)?/, ''))
     .join('\n');
 }

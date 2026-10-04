@@ -140,3 +140,21 @@ coordination-mcp, exposing ComfyUI to the internet.
 
 Phase 0a: download `hunyuan_3d_v2.1.safetensors` to AlienPC and run the official ComfyUI
 Hunyuan3D 2.1 template once by hand on a Flux image of a car, recording peak VRAM and time.
+
+## Phase 0a results (2026-10-03, executed)
+
+| Item | Result |
+|---|---|
+| Weights | `hunyuan_3d_v2.1.safetensors` in `ComfyUI\models\checkpoints`, 7,365,943,290 bytes (matches Hugging Face); listed by `ImageOnlyCheckpointLoader` |
+| Background removal | `birefnet.safetensors` (Comfy-Org/BiRefNet, MIT) in `ComfyUI\models\background_removal`, 444,473,596 bytes |
+| Reference image | Flux 1 dev fp8, 1024 px, 30 steps: about 65 s cold, faster warm. Prompt must ask for the whole object small in frame or the tail gets cropped |
+| Shape generation | Hunyuan3D 2.1, octree 256, 30 steps: 33 to 36 s, **peak VRAM 10.4 to 10.9 GB** of 16 GB |
+| Ground slab | Without background removal Hunyuan3D rebuilds the floor shadow as a thin plate under the object. BiRefNet mask composited onto white removes it |
+| Proportions (C8, 150 mm) | 66 x 150 x 40 mm; width/length 0.44 vs real 0.42, height/length 0.26 vs real 0.27 |
+| Mesher | `surface net` is smooth but non-manifold (52,019 bad edges, 15,274 pinched vertices on the C8). `basic` is near-manifold after welding but voxel-stepped (about 0.6 mm steps at 150 mm). Repair is the core Phase 1 problem |
+| License | Hunyuan3D 2.1 community license: excludes EU, UK, South Korea; 1M MAU commercial cap; outputs must not train other models. Fine for personal US use |
+| Saved workflows | `forge/workflows/flux_text_to_reference.api.json`, `forge/workflows/hunyuan3d21_image_to_mesh.api.json` (placeholders `PROMPT`, `INPUT_IMAGE.png`, `OUTPUT`) |
+| Test print file | `C:\Users\matth\Documents\ShapeCast\2026-10-03-c8-hunyuan3d-150mm.stl` (unrepaired surface-net mesh, for a Chitubox slice test) |
+
+Phase 0a exit criterion met (a GLB of a car exists on AlienPC; VRAM and time recorded). Phase 0b
+(claude.ai connector, payload size) not started.

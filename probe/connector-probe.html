@@ -1,0 +1,78 @@
+<title>Forge Connector Probe</title>
+<style>
+:root{--bg:#f6f5f2;--fg:#1d1d1b;--muted:#6b6a64;--ok:#2d7d46;--bad:#b3261e;--line:#d9d6cd;--accent:#c97a12}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#1b1b19;--fg:#ece9e2;--muted:#9a9890;--ok:#5fc27d;--bad:#ff6b61;--line:#34373d;--accent:#e0912a;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#1b1b19;--fg:#ece9e2;--muted:#9a9890;--ok:#5fc27d;--bad:#ff6b61;--line:#34373d;--accent:#e0912a;color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font:14px/1.5 system-ui;padding-block:16px;padding-inline:16px;max-width:760px}
+h1{font-size:22px;margin:0 0 4px}.muted{color:var(--muted)}
+section{border:1px solid var(--line);border-radius:6px;padding:12px;margin-block:12px}
+button{font:inherit;padding:6px 12px;border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:4px;cursor:pointer}
+button:disabled{opacity:.5}
+pre{white-space:pre-wrap;word-break:break-word;font:12px ui-monospace,monospace;margin:8px 0 0}
+.ok{color:var(--ok)}.bad{color:var(--bad)}
+table{border-collapse:collapse;font-variant-numeric:tabular-nums;margin-top:8px}td,th{padding:3px 10px;border-bottom:1px solid var(--line);text-align:left}
+</style>
+<h1>ShapeCast Forge connector probe</h1>
+<p class="muted">Phase 0b. Needs the "ShapeCast Forge" custom connector added in claude.ai. Run each test once on the Surface and once on the Pixel, then screenshot the page.</p>
+<section><strong>1. Status</strong> <button id="b1">Check AlienPC</button><pre id="o1">not run</pre></section>
+<section><strong>2. Result size ladder</strong> <button id="b2">Run ladder</button>
+<p class="muted">Asks the forge for 64 KB up to 8 MB results and checks each arrives intact. Stops at the first failure.</p>
+<table id="t2"><thead><tr><th>Size</th><th>Result</th><th>Time</th></tr></thead><tbody></tbody></table></section>
+<section><strong>3. Photo to forge</strong> <input id="f3" type="file" accept="image/*"> <button id="b3">Send</button>
+<p class="muted">Sends the photo to the forge as a file argument (up to 16 MB) and compares checksums.</p><pre id="o3">not run</pre></section>
+<script>
+const S = 'ShapeCast Forge';
+const $ = (id) => document.getElementById(id);
+const fmt = (kb) => (kb >= 1024 ? kb / 1024 + ' MB' : kb + ' KB');
+const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+let mcp = null;
+const errText = (e) => `${e?.code || 'error'}${e?.message ? ': ' + e.message : ''}`;
+(async () => {
+  mcp = (await window.claude?.use('mcp')) ?? null;
+  if (!mcp) { for (const id of ['o1', 'o3']) $(id).textContent = 'mcp capability unavailable in this view'; for (const id of ['b1','b2','b3']) $(id).disabled = true; return; }
+  try { const l = await mcp.listTools(); const s = l.servers.find((x) => x.server === S); $('o1').textContent = `connector listed: ${!!s}, auth: ${s?.authStatus ?? 'n/a'}, fileArgs: ${l.fileArgs === true}`; } catch (e) { $('o1').textContent = 'listTools failed: ' + errText(e); }
+})();
+$('b1').onclick = async () => {
+  $('o1').textContent = 'calling...';
+  try { const r = await mcp.callTool(S, 'forge_status', {}, { cache: false }); $('o1').textContent = JSON.stringify(r.payload, null, 1); $('o1').className = 'ok'; }
+  catch (e) { $('o1').textContent = errText(e); $('o1').className = 'bad'; }
+};
+$('b2').onclick = async () => {
+  $('b2').disabled = true;
+  const body = $('t2').querySelector('tbody'); body.innerHTML = '';
+  for (const kb of [64, 256, 512, 1024, 2048, 4096, 8192]) {
+    const tr = document.createElement('tr'); tr.innerHTML = `<td>${fmt(kb)}</td><td>...</td><td></td>`; body.append(tr);
+    const t0 = performance.now();
+    try {
+      const r = await mcp.callTool(S, 'forge_probe_payload', { kb }, { cache: false });
+      const p = r.payload;
+      const okLen = p?.data?.length === kb * 1024;
+      const okSha = okLen && hex(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(p.data))) === p.sha256;
+      tr.children[1].textContent = okLen && okSha ? 'intact' : `corrupt (got ${p?.data?.length ?? 0} chars)`;
+      tr.children[1].className = okLen && okSha ? 'ok' : 'bad';
+      tr.children[2].textContent = Math.round(performance.now() - t0) + ' ms';
+      if (!(okLen && okSha)) break;
+    } catch (e) { tr.children[1].textContent = errText(e); tr.children[1].className = 'bad'; tr.children[2].textContent = Math.round(performance.now() - t0) + ' ms'; break; }
+  }
+  $('b2').disabled = false;
+};
+$('b3').onclick = async () => {
+  const f = $('f3').files[0];
+  if (!f) { $('o3').textContent = 'choose a photo first'; return; }
+  $('o3').textContent = 'sending ' + f.size + ' bytes...';
+  const buf = await f.arrayBuffer();
+  const localSha = hex(await crypto.subtle.digest('SHA-256', buf));
+  let fileArgs = false;
+  try { fileArgs = (await mcp.listTools()).fileArgs === true; } catch {}
+  const t0 = performance.now();
+  try {
+    let input;
+    if (fileArgs) input = { name: f.name, base64: { $file: { data: buf, name: f.name, type: f.type || 'image/jpeg' } } };
+    else { if (f.size > 700000) throw { code: 'too_big_inline', message: 'no file route in this view and the photo is over the 1 MiB inline limit' }; input = { name: f.name, base64: btoa(String.fromCharCode(...new Uint8Array(buf))) }; }
+    const r = await mcp.callTool(S, 'forge_probe_file', input, { cache: false });
+    const p = r.payload; const same = p.sha256 === localSha;
+    $('o3').textContent = `route: ${fileArgs ? 'file argument' : 'inline base64'}\nsent ${f.size} bytes, forge received ${p.bytes}\nchecksum ${same ? 'matches' : 'MISMATCH'}\n${Math.round(performance.now() - t0)} ms`;
+    $('o3').className = same ? 'ok' : 'bad';
+  } catch (e) { $('o3').textContent = `route: ${fileArgs ? 'file argument' : 'inline base64'}\n` + errText(e); $('o3').className = 'bad'; }
+};
+</script>

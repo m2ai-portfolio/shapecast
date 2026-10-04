@@ -4,3 +4,5 @@ node_modules
 tests/fixtures
 docs
 probe
+forge/node_modules
+forge/dist

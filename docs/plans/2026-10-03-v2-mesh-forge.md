@@ -158,3 +158,15 @@ Hunyuan3D 2.1 template once by hand on a Flux image of a car, recording peak VRA
 
 Phase 0a exit criterion met (a GLB of a car exists on AlienPC; VRAM and time recorded). Phase 0b
 (claude.ai connector, payload size) not started.
+
+## Phase 0b results (2026-10-04, executed)
+
+| Item | Result |
+|---|---|
+| Port | claude.ai's connector service only egresses on 443. Port 10000 received zero requests; moved to Funnel 443 under `/forge` (prefix stripped) plus mounts for `/.well-known/oauth-authorization-server` and `/.well-known/openid-configuration` (issuer-with-path discovery). Ollama's `/` mount untouched |
+| Connector URL | `https://im4tlai-dev.tail2efc28.ts.net/forge/mcp` |
+| Auth | claude.ai auto-detected "Sign in now" + "Use Claude's published identity" (CIMD). Its hosted client id is `https://claude.ai/oauth/mcp-oauth-client-metadata`; fetched and accepted. Owner passphrase entered by Matthew; token issued 03:22 UTC; survives restarts |
+| Status tool | Works end to end from an artifact: AlienPC available, RTX 5080, ComfyUI 0.37.0 |
+| Result size | Intact at 64 KB, 256 KB, 512 KB, 1 MB, 2 MB, 4 MB. 8 MB fails: "Anthropic proxy: MCP server response stalled while streaming a large body". Note each result carried the data twice (text block + structuredContent), so the real ceiling per copy is between 4 and 8 MB. Design rule: preview payloads at most 2 MB, sent once |
+| File arguments | `listTools().fileArgs` is false in the Chrome artifact view, so photos go inline (1 MiB input limit). Page shrinks to a JPEG under 700 KB first |
+| Photo path | First probe build overflowed the stack encoding base64 (page bug). Fixed with FileReader + canvas shrink; verified locally with a stub connector (124 KB and 4000x3000 PNG -> 658 KB JPEG, checksums match). Real claude.ai run pending |

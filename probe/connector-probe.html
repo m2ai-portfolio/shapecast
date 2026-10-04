@@ -18,8 +18,8 @@ table{border-collapse:collapse;font-variant-numeric:tabular-nums;margin-top:8px}
 <section><strong>2. Result size ladder</strong> <button id="b2">Run ladder</button>
 <p class="muted">Asks the forge for 64 KB up to 8 MB results and checks each arrives intact. Stops at the first failure.</p>
 <table id="t2"><thead><tr><th>Size</th><th>Result</th><th>Time</th></tr></thead><tbody></tbody></table></section>
-<section><strong>3. Photo to forge</strong> <input id="f3" type="file" accept="image/*"> <button id="b3">Send</button>
-<p class="muted">Sends the photo to the forge as a file argument (up to 16 MB) and compares checksums.</p><pre id="o3">not run</pre></section>
+<section><strong>3. Photo to forge</strong> <input id="f3" type="file" accept="image/*"> <button id="b3">Send</button> <button id="b3t">Send test image</button>
+<p class="muted">Sends the photo to the forge and compares checksums. Uses a file argument when the view offers one; otherwise shrinks the photo to a JPEG under 700 KB and sends it inline.</p><pre id="o3">not run</pre></section>
 <script>
 const S = 'ShapeCast Forge';
 const $ = (id) => document.getElementById(id);
@@ -56,23 +56,38 @@ $('b2').onclick = async () => {
   }
   $('b2').disabled = false;
 };
-$('b3').onclick = async () => {
-  const f = $('f3').files[0];
-  if (!f) { $('o3').textContent = 'choose a photo first'; return; }
-  $('o3').textContent = 'sending ' + f.size + ' bytes...';
-  const buf = await f.arrayBuffer();
-  const localSha = hex(await crypto.subtle.digest('SHA-256', buf));
+const b64 = (blob) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = () => rej(r.error); r.readAsDataURL(blob); });
+async function shrink(blob, maxSide = 1600) {
+  const bmp = await createImageBitmap(blob);
+  const k = Math.min(1, maxSide / Math.max(bmp.width, bmp.height));
+  const c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+  const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(bmp, 0, 0, c.width, c.height);
+  for (const q of [0.85, 0.75, 0.6, 0.45]) { const out = await new Promise((r) => c.toBlob(r, 'image/jpeg', q)); if (out.size <= 700000) return out; }
+  return shrink(blob, Math.round(maxSide * 0.7));
+}
+function testImage() {
+  const c = document.createElement('canvas'); c.width = 1200; c.height = 900; const g = c.getContext('2d');
+  const grd = g.createLinearGradient(0, 0, 1200, 900); grd.addColorStop(0, '#c97a12'); grd.addColorStop(1, '#2d7d46'); g.fillStyle = grd; g.fillRect(0, 0, 1200, 900);
+  for (let i = 0; i < 400; i++) { g.fillStyle = `hsl(${i * 37 % 360} 70% 50% / .5)`; g.beginPath(); g.arc((i * 97) % 1200, (i * 53) % 900, 10 + (i % 40), 0, 7); g.fill(); }
+  return new Promise((r) => c.toBlob(r, 'image/jpeg', 0.9));
+}
+async function sendPhoto(blob, name) {
+  $('o3').className = ''; $('o3').textContent = 'preparing...';
   let fileArgs = false;
   try { fileArgs = (await mcp.listTools()).fileArgs === true; } catch {}
   const t0 = performance.now();
   try {
-    let input;
-    if (fileArgs) input = { name: f.name, base64: { $file: { data: buf, name: f.name, type: f.type || 'image/jpeg' } } };
-    else { if (f.size > 700000) throw { code: 'too_big_inline', message: 'no file route in this view and the photo is over the 1 MiB inline limit' }; input = { name: f.name, base64: btoa(String.fromCharCode(...new Uint8Array(buf))) }; }
+    let input, sent;
+    if (fileArgs) { sent = blob; input = { name, base64: { $file: { data: await blob.arrayBuffer(), name, type: blob.type || 'image/jpeg' } } }; }
+    else { sent = blob.size > 700000 || !/jpe?g/.test(blob.type) ? await shrink(blob) : blob; input = { name: name.replace(/\.\w+$/, '') + '.jpg', base64: await b64(sent) }; }
+    const localSha = hex(await crypto.subtle.digest('SHA-256', await sent.arrayBuffer()));
+    $('o3').textContent = `sending ${sent.size} bytes (${fileArgs ? 'file argument' : 'inline base64'})...`;
     const r = await mcp.callTool(S, 'forge_probe_file', input, { cache: false });
     const p = r.payload; const same = p.sha256 === localSha;
-    $('o3').textContent = `route: ${fileArgs ? 'file argument' : 'inline base64'}\nsent ${f.size} bytes, forge received ${p.bytes}\nchecksum ${same ? 'matches' : 'MISMATCH'}\n${Math.round(performance.now() - t0)} ms`;
+    $('o3').textContent = `route: ${fileArgs ? 'file argument' : 'inline base64'}\noriginal ${blob.size} bytes, sent ${sent.size} bytes, forge received ${p.bytes}\nchecksum ${same ? 'matches' : 'MISMATCH'}\n${Math.round(performance.now() - t0)} ms`;
     $('o3').className = same ? 'ok' : 'bad';
   } catch (e) { $('o3').textContent = `route: ${fileArgs ? 'file argument' : 'inline base64'}\n` + errText(e); $('o3').className = 'bad'; }
-};
+}
+$('b3').onclick = async () => { const f = $('f3').files[0]; if (!f) { $('o3').textContent = 'choose a photo first'; return; } await sendPhoto(f, f.name); };
+$('b3t').onclick = async () => sendPhoto(await testImage(), 'probe-test.jpg');
 </script>

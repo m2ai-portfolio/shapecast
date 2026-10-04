@@ -190,6 +190,11 @@ export function createForgeServer(cfg: ForgeConfig): Server {
         if (req.method !== 'POST')
           return json(res, 405, { error: 'method not allowed' }, { Allow: 'POST' });
         const body = JSON.parse(await readBody(req));
+        const rpc = (Array.isArray(body) ? body : [body]).map((m: any) => m?.method ?? 'response').join(',');
+        res.on('finish', () => {
+          if (res.statusCode >= 400)
+            console.log(`  mcp ${rpc} protocol=${req.headers['mcp-protocol-version'] ?? '-'} accept=${req.headers.accept ?? '-'} -> ${res.statusCode}`);
+        });
         const server = buildMcp(cfg);
         const transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: undefined,

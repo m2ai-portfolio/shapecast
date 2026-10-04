@@ -164,11 +164,11 @@ export function createForgeServer(cfg: ForgeConfig): Server {
       )
         return json(res, 200, oauth.authorizationServerMetadata());
       if (path === '/authorize' && req.method === 'GET') {
-        const r = oauth.authorizePage(url.searchParams);
+        const r = await oauth.authorizePage(url.searchParams);
         return send(res, r.status, r.body ?? '', r.headers);
       }
       if (path === '/authorize' && req.method === 'POST') {
-        const r = oauth.authorizeSubmit(new URLSearchParams(await readBody(req)));
+        const r = await oauth.authorizeSubmit(new URLSearchParams(await readBody(req)));
         return send(res, r.status, r.body ?? '', r.headers);
       }
       if (path === '/token' && req.method === 'POST') {

@@ -30,7 +30,7 @@ const authParams = (over: Record<string, string> = {}) =>
   });
 
 async function getCode(o: OAuth): Promise<string> {
-  const r = o.authorizeSubmit(authParams({ passphrase: PASS }));
+  const r = await o.authorizeSubmit(authParams({ passphrase: PASS }));
   expect(r.status).toBe(302);
   const loc = new URL(r.headers!.Location);
   expect(loc.origin + loc.pathname).toBe(CLAUDE_CALLBACK);
@@ -65,24 +65,24 @@ describe('discovery metadata', () => {
 });
 
 describe('authorize', () => {
-  it('renders a passphrase form for a valid request', () => {
-    const r = make().authorizePage(authParams());
+  it('renders a passphrase form for a valid request', async () => {
+    const r = await make().authorizePage(authParams());
     expect(r.status).toBe(200);
     expect(r.body).toContain('name="passphrase"');
     expect(r.body).toContain('claude.ai');
   });
-  it('never redirects to a redirect_uri other than the claude.ai callback', () => {
-    const r = make().authorizePage(authParams({ redirect_uri: 'https://evil.example/cb' }));
+  it('never redirects to a redirect_uri other than the claude.ai callback', async () => {
+    const r = await make().authorizePage(authParams({ redirect_uri: 'https://evil.example/cb' }));
     expect(r.status).toBe(400);
     expect(r.headers?.Location).toBeUndefined();
   });
-  it('rejects an unknown client and a missing or non-S256 PKCE challenge', () => {
-    expect(make().authorizePage(authParams({ client_id: 'other' })).status).toBe(400);
-    expect(make().authorizePage(authParams({ code_challenge_method: 'plain' })).status).toBe(400);
-    expect(make().authorizePage(authParams({ code_challenge: '' })).status).toBe(400);
+  it('rejects an unknown client and a missing or non-S256 PKCE challenge', async () => {
+    expect((await make().authorizePage(authParams({ client_id: 'other' }))).status).toBe(400);
+    expect((await make().authorizePage(authParams({ code_challenge_method: 'plain' }))).status).toBe(400);
+    expect((await make().authorizePage(authParams({ code_challenge: '' }))).status).toBe(400);
   });
-  it('a wrong passphrase issues no code and re-renders the form', () => {
-    const r = make().authorizeSubmit(authParams({ passphrase: 'nope' }));
+  it('a wrong passphrase issues no code and re-renders the form', async () => {
+    const r = await make().authorizeSubmit(authParams({ passphrase: 'nope' }));
     expect(r.status).toBe(401);
     expect(r.headers?.Location).toBeUndefined();
   });

@@ -164,7 +164,7 @@ export function createOAuth(cfg: OAuthConfig) {
 <h1 style="font-size:20px">ShapeCast Forge</h1>
 <p>claude.ai is asking to use your ShapeCast Forge connector, which runs 3D generation on AlienPC. Enter the owner passphrase to allow it.</p>
 ${message ? `<p style="color:#b3261e">${esc(message)}</p>` : ''}
-<form method="post" action="/authorize">${hidden}
+<form method="post" action="${base}/authorize">${hidden}
 <label>Owner passphrase <input name="passphrase" type="password" autocomplete="current-password" required style="width:100%;padding:8px;margin-top:4px"></label>
 <button style="margin-top:12px;padding:8px 16px">Allow</button></form></body>`;
   }

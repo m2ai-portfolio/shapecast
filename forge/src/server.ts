@@ -160,7 +160,9 @@ export function createForgeServer(cfg: ForgeConfig): Server {
       if (
         req.method === 'GET' &&
         (path === '/.well-known/oauth-authorization-server' ||
-          path === '/.well-known/openid-configuration')
+          path === '/.well-known/openid-configuration' ||
+          path === '/' ||
+          path === '/forge')
       )
         return json(res, 200, oauth.authorizationServerMetadata());
       if (path === '/authorize' && req.method === 'GET') {

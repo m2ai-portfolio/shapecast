@@ -267,3 +267,89 @@ export function runPrintChecks(items, { layerUm = 50, orientation = 'flat' } = {
       : 'green';
   return { checks, bbox: bb, volumeMm3, layers, worst };
 }
+
+export function runMeshPrintChecks(bbox, volumeMm3, manifoldOk, { layerUm = 50 } = {}) {
+  if (!bbox)
+    return {
+      checks: [{ id: 'empty', level: 'info', message: 'No mesh yet' }],
+      bbox: null,
+      volumeMm3: 0,
+      layers: {},
+      worst: 'info',
+    };
+  const checks = [];
+  const [W, D, H] = SATURN3.build,
+    [sx, sy, sz] = bbox.size;
+  if (sx <= W && sy <= D && sz <= H)
+    checks.push({
+      id: 'fit',
+      level: 'green',
+      message: `Fits the plate: ${f(sx)} x ${f(sy)} x ${f(sz)} mm`,
+    });
+  else if (sy <= W && sx <= D && sz <= H)
+    checks.push({
+      id: 'fit',
+      level: 'amber',
+      message: `Fits only rotated 90 deg about Z: ${f(sx)} x ${f(sy)} x ${f(sz)} mm`,
+    });
+  else
+    checks.push({
+      id: 'fit',
+      level: 'red',
+      message: `Too large: ${f(sx)} x ${f(sy)} x ${f(sz)} mm exceeds ${W} x ${D} x ${H} mm`,
+    });
+
+  checks.push({
+    id: 'manifold',
+    level: manifoldOk ? 'green' : 'red',
+    message: manifoldOk
+      ? 'Watertight 2-manifold mesh ready for slicing'
+      : 'Mesh has non-manifold edges or holes',
+  });
+
+  if (bbox.min[2] >= -EPS && bbox.min[2] <= 0.1)
+    checks.push({
+      id: 'plate',
+      level: 'green',
+      message: 'Grounded on the build plate (z = 0.00 mm)',
+    });
+  else if (bbox.min[2] < -EPS)
+    checks.push({
+      id: 'plate',
+      level: 'red',
+      message: `Below the build plate (min z = ${f(bbox.min[2])} mm)`,
+    });
+  else
+    checks.push({
+      id: 'plate',
+      level: 'amber',
+      message: `Elevated above build plate (min z = ${f(bbox.min[2])} mm)`,
+    });
+
+  const ml = volumeMm3 / 1000;
+  checks.push({
+    id: 'volume',
+    level: 'info',
+    message:
+      ml > 25
+        ? `Mesh volume ${ml.toFixed(1)} mL (hollow in Chitubox with 2.0 mm wall + 2 drain holes)`
+        : `Mesh volume ${ml.toFixed(1)} mL`,
+  });
+  const layers = Object.fromEntries(SATURN3.layerUm.map((um) => [um, Math.ceil(sz / (um / 1000))]));
+  checks.push({
+    id: 'layers',
+    level: 'info',
+    message: `${layers[layerUm]} layers at ${layerUm} um (${f(sz)} mm tall)`,
+  });
+  checks.push({
+    id: 'pixel',
+    level: 'info',
+    message: `XY pixel ${SATURN3.pixelUm[0]} x ${SATURN3.pixelUm[1]} um`,
+  });
+  const worst = checks.some((c) => c.level === 'red')
+    ? 'red'
+    : checks.some((c) => c.level === 'amber')
+      ? 'amber'
+      : 'green';
+  return { checks, bbox, volumeMm3, layers, worst };
+}

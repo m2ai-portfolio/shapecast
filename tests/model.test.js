@@ -168,5 +168,25 @@ describe('documents', () => {
       cache.clear();
       expect(cache.item(EXAMPLE_LIST.parts[0])).not.toBe(a);
     });
+    it('parseScaleRefMm and unpackForgePreview decode Forge payloads accurately', async () => {
+      const { parseScaleRefMm, unpackForgePreview } = await import('../src/model.js');
+      expect(parseScaleRefMm('150 mm longest side', 120)).toBe(150);
+      expect(parseScaleRefMm('no numbers here', 120)).toBe(120);
+      expect(parseScaleRefMm('500 mm', 120)).toBe(218);
+
+      const verts = new Float32Array([0, 0, 0, 10, 0, 0, 0, 10, 0]);
+      const indices = new Uint16Array([0, 1, 2]);
+      const vB64 = Buffer.from(verts.buffer).toString('base64');
+      const iB64 = Buffer.from(indices.buffer).toString('base64');
+      const tris = unpackForgePreview({
+        format: 'indexed-f32-u16-v1',
+        vertexCount: 3,
+        triangleCount: 1,
+        isFullMesh: true,
+        vertsBase64: vB64,
+        indicesBase64: iB64,
+      });
+      expect([...tris]).toEqual([0, 0, 0, 10, 0, 0, 0, 10, 0]);
+    });
   });
 });

@@ -1,42 +1,181 @@
 import { createHash, randomBytes } from 'node:crypto';
-const B = 'http://127.0.0.1:3420', C = 'https://claude.ai/oauth/mcp-oauth-client-metadata', CB = 'https://claude.ai/api/mcp/auth_callback';
-const show = (label, v) => console.log(label.padEnd(44), typeof v === 'string' ? v : JSON.stringify(v));
-const verifier = randomBytes(40).toString('base64url'), challenge = createHash('sha256').update(verifier).digest('base64url');
-const a = await fetch(`${B}/authorize`, { method: 'POST', redirect: 'manual', body: new URLSearchParams({ response_type: 'code', client_id: C, redirect_uri: CB, code_challenge: challenge, code_challenge_method: 'S256', state: 'drive', passphrase: process.env.FORGE_OWNER_PASSPHRASE }) });
+const B = 'http://127.0.0.1:3420',
+  C = 'https://claude.ai/oauth/mcp-oauth-client-metadata',
+  CB = 'https://claude.ai/api/mcp/auth_callback';
+const show = (label, v) =>
+  console.log(label.padEnd(44), typeof v === 'string' ? v : JSON.stringify(v));
+const verifier = randomBytes(40).toString('base64url'),
+  challenge = createHash('sha256').update(verifier).digest('base64url');
+const a = await fetch(`${B}/authorize`, {
+  method: 'POST',
+  redirect: 'manual',
+  body: new URLSearchParams({
+    response_type: 'code',
+    client_id: C,
+    redirect_uri: CB,
+    code_challenge: challenge,
+    code_challenge_method: 'S256',
+    state: 'drive',
+    passphrase: process.env.FORGE_OWNER_PASSPHRASE,
+  }),
+});
 const loc = new URL(a.headers.get('location'));
-show('authorize (correct passphrase)', `${a.status} -> ${loc.origin}${loc.pathname} state=${loc.searchParams.get('state')} code=${loc.searchParams.get('code') ? 'present' : 'MISSING'}`);
-const form = (o) => ({ method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(o) });
-const t = await fetch(`${B}/token`, form({ grant_type: 'authorization_code', code: loc.searchParams.get('code'), code_verifier: verifier, client_id: C, redirect_uri: CB }));
+show(
+  'authorize (correct passphrase)',
+  `${a.status} -> ${loc.origin}${loc.pathname} state=${loc.searchParams.get('state')} code=${loc.searchParams.get('code') ? 'present' : 'MISSING'}`,
+);
+const form = (o) => ({
+  method: 'POST',
+  headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  body: new URLSearchParams(o),
+});
+const t = await fetch(
+  `${B}/token`,
+  form({
+    grant_type: 'authorization_code',
+    code: loc.searchParams.get('code'),
+    code_verifier: verifier,
+    client_id: C,
+    redirect_uri: CB,
+  }),
+);
 const tok = await t.json();
-show('token exchange (public client, PKCE)', `${t.status} token_type=${tok.token_type} expires_in=${tok.expires_in} refresh=${tok.refresh_token ? 'present' : 'MISSING'}`);
-const replay = await fetch(`${B}/token`, form({ grant_type: 'authorization_code', code: loc.searchParams.get('code'), code_verifier: verifier, client_id: C, redirect_uri: CB }));
+show(
+  'token exchange (public client, PKCE)',
+  `${t.status} token_type=${tok.token_type} expires_in=${tok.expires_in} refresh=${tok.refresh_token ? 'present' : 'MISSING'}`,
+);
+const replay = await fetch(
+  `${B}/token`,
+  form({
+    grant_type: 'authorization_code',
+    code: loc.searchParams.get('code'),
+    code_verifier: verifier,
+    client_id: C,
+    redirect_uri: CB,
+  }),
+);
 show('same code replayed', `${replay.status} ${(await replay.json()).error}`);
 const mcp = async (body, headers = {}) => {
-  const r = await fetch(`${B}/mcp`, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', Authorization: `Bearer ${tok.access_token}`, ...headers }, body: typeof body === 'string' ? body : JSON.stringify(body) });
-  const text = await r.text(); let j; try { j = JSON.parse(text); } catch { j = text.slice(0, 120); } return { status: r.status, j };
+  const r = await fetch(`${B}/mcp`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json, text/event-stream',
+      Authorization: `Bearer ${tok.access_token}`,
+      ...headers,
+    },
+    body: typeof body === 'string' ? body : JSON.stringify(body),
+  });
+  const text = await r.text();
+  let j;
+  try {
+    j = JSON.parse(text);
+  } catch {
+    j = text.slice(0, 120);
+  }
+  return { status: r.status, j };
 };
-const init = await mcp({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'verify', version: '1' } } });
-show('initialize', `${init.status} server=${init.j.result?.serverInfo?.name} protocol=${init.j.result?.protocolVersion}`);
+const init = await mcp({
+  jsonrpc: '2.0',
+  id: 1,
+  method: 'initialize',
+  params: {
+    protocolVersion: '2025-06-18',
+    capabilities: {},
+    clientInfo: { name: 'verify', version: '1' },
+  },
+});
+show(
+  'initialize',
+  `${init.status} server=${init.j.result?.serverInfo?.name} protocol=${init.j.result?.protocolVersion}`,
+);
 const list = await mcp({ jsonrpc: '2.0', id: 2, method: 'tools/list' });
-show('tools/list', list.j.result?.tools?.map((x) => `${x.name}${x.annotations?.readOnlyHint ? '(ro)' : ''}`));
-const st = await mcp({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'forge_status', arguments: {} } });
+show(
+  'tools/list',
+  list.j.result?.tools?.map((x) => `${x.name}${x.annotations?.readOnlyHint ? '(ro)' : ''}`),
+);
+const st = await mcp({
+  jsonrpc: '2.0',
+  id: 3,
+  method: 'tools/call',
+  params: { name: 'forge_status', arguments: {} },
+});
 show('forge_status', st.j.result?.structuredContent);
-const pl = await mcp({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'forge_probe_payload', arguments: { kb: 64 } } });
+const jb = await mcp({
+  jsonrpc: '2.0',
+  id: 31,
+  method: 'tools/call',
+  params: { name: 'forge_job', arguments: { jobId: 'job_nonexistent' } },
+});
+show('forge_job (unknown id)', jb.j.result?.structuredContent);
+const pl = await mcp({
+  jsonrpc: '2.0',
+  id: 4,
+  method: 'tools/call',
+  params: { name: 'forge_probe_payload', arguments: { kb: 64 } },
+});
 const d = pl.j.result?.structuredContent;
-show('forge_probe_payload kb=64', `${d.data.length} chars, sha ok=${createHash('sha256').update(d.data).digest('hex') === d.sha256}`);
+show(
+  'forge_probe_payload kb=64',
+  `${d.data.length} chars, sha ok=${createHash('sha256').update(d.data).digest('hex') === d.sha256}`,
+);
 const img = randomBytes(300000);
-const pf = await mcp({ jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'forge_probe_file', arguments: { name: 'x.jpg', base64: img.toString('base64') } } });
-show('forge_probe_file 300 KB', `bytes=${pf.j.result?.structuredContent?.bytes} sha ok=${pf.j.result?.structuredContent?.sha256 === createHash('sha256').update(img).digest('hex')}`);
-show('PROBE kb=0', (await mcp({ jsonrpc: '2.0', id: 6, method: 'tools/call', params: { name: 'forge_probe_payload', arguments: { kb: 0 } } })).j.result?.content?.[0]?.text?.slice(0, 90) ?? 'no error text');
-show('PROBE unknown tool', (await mcp({ jsonrpc: '2.0', id: 7, method: 'tools/call', params: { name: 'forge_delete_everything', arguments: {} } })).j.result?.content?.[0]?.text?.slice(0, 80) ?? 'no error');
+const pf = await mcp({
+  jsonrpc: '2.0',
+  id: 5,
+  method: 'tools/call',
+  params: {
+    name: 'forge_probe_file',
+    arguments: { name: 'x.jpg', base64: img.toString('base64') },
+  },
+});
+show(
+  'forge_probe_file 300 KB',
+  `bytes=${pf.j.result?.structuredContent?.bytes} sha ok=${pf.j.result?.structuredContent?.sha256 === createHash('sha256').update(img).digest('hex')}`,
+);
+show(
+  'PROBE kb=0',
+  (
+    await mcp({
+      jsonrpc: '2.0',
+      id: 6,
+      method: 'tools/call',
+      params: { name: 'forge_probe_payload', arguments: { kb: 0 } },
+    })
+  ).j.result?.content?.[0]?.text?.slice(0, 90) ?? 'no error text',
+);
+show(
+  'PROBE unknown tool',
+  (
+    await mcp({
+      jsonrpc: '2.0',
+      id: 7,
+      method: 'tools/call',
+      params: { name: 'forge_delete_everything', arguments: {} },
+    })
+  ).j.result?.content?.[0]?.text?.slice(0, 80) ?? 'no error',
+);
 const bad = await mcp('{"jsonrpc": "2.0", "id": 8, ');
 show('PROBE malformed JSON body', `${bad.status} ${JSON.stringify(bad.j)}`);
 const g = await fetch(`${B}/mcp`, { headers: { Authorization: `Bearer ${tok.access_token}` } });
 show('PROBE GET /mcp with token', `${g.status} allow=${g.headers.get('allow')}`);
-const r1 = await fetch(`${B}/token`, form({ grant_type: 'refresh_token', refresh_token: tok.refresh_token, client_id: C }));
+const r1 = await fetch(
+  `${B}/token`,
+  form({ grant_type: 'refresh_token', refresh_token: tok.refresh_token, client_id: C }),
+);
 const t2 = await r1.json();
 show('refresh', `${r1.status} rotated=${t2.refresh_token !== tok.refresh_token}`);
-const r2 = await fetch(`${B}/token`, form({ grant_type: 'refresh_token', refresh_token: tok.refresh_token, client_id: C }));
+const r2 = await fetch(
+  `${B}/token`,
+  form({ grant_type: 'refresh_token', refresh_token: tok.refresh_token, client_id: C }),
+);
 show('PROBE old refresh token replayed', `${r2.status} ${(await r2.json()).error}`);
-const r3 = await fetch(`${B}/token`, form({ grant_type: 'refresh_token', refresh_token: t2.refresh_token, client_id: 'https://claude.ai/oauth/claude-code-client-metadata' }));
+const r3 = await fetch(
+  `${B}/token`,
+  form({
+    grant_type: 'refresh_token',
+    refresh_token: t2.refresh_token,
+    client_id: 'https://claude.ai/oauth/claude-code-client-metadata',
+  }),
+);
 show('PROBE refresh as a different claude.ai client', `${r3.status} ${(await r3.json()).error}`);

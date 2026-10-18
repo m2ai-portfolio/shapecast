@@ -173,3 +173,86 @@ export const SAMPLE_LIST = {
   assumptions: ['example model: the 40 mm block is the scale reference from the catapult video'],
   print: { orientation: 'flat', suggestedLayerUm: 50 },
 };
+
+/** Extract target longest horizontal dimension (mm) from scaleRef text, clamped to [10, 218]. */
+export function parseScaleRefMm(scaleRef, fallbackMm = 120) {
+  const s = String(scaleRef ?? '').trim();
+  const m = s.match(/(\d+(?:\.\d+)?)\s*(?:mm|millimet(?:er|re)s?)?\b/i);
+  if (!m) return fallbackMm;
+  const v = Number(m[1]);
+  if (!Number.isFinite(v) || v <= 0) return fallbackMm;
+  return Math.max(10, Math.min(218, v));
+}
+
+function decodeBase64Bytes(b64) {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+/** Unpack an indexed Forge preview payload into a flat Float64Array(triangleCount * 9). */
+export function unpackForgePreview(preview) {
+  if (!preview || !preview.vertsBase64 || !preview.indicesBase64) return new Float64Array(0);
+  const vBytes = decodeBase64Bytes(preview.vertsBase64);
+  const iBytes = decodeBase64Bytes(preview.indicesBase64);
+  const verts = new Float32Array(
+    vBytes.buffer,
+    vBytes.byteOffset,
+    Math.floor(vBytes.byteLength / 4),
+  );
+  const indices =
+    preview.format === 'indexed-f32-u16-v1'
+      ? new Uint16Array(iBytes.buffer, iBytes.byteOffset, Math.floor(iBytes.byteLength / 2))
+      : new Uint32Array(iBytes.buffer, iBytes.byteOffset, Math.floor(iBytes.byteLength / 4));
+  const triCount = Math.floor(indices.length / 3);
+  const tris = new Float64Array(triCount * 9);
+  for (let t = 0; t < triCount; t++) {
+    const i0 = indices[t * 3] * 3,
+      i1 = indices[t * 3 + 1] * 3,
+      i2 = indices[t * 3 + 2] * 3;
+    const base = t * 9;
+    tris[base] = verts[i0];
+    tris[base + 1] = verts[i0 + 1];
+    tris[base + 2] = verts[i0 + 2];
+    tris[base + 3] = verts[i1];
+    tris[base + 4] = verts[i1 + 1];
+    tris[base + 5] = verts[i1 + 2];
+    tris[base + 6] = verts[i2];
+    tris[base + 7] = verts[i2 + 1];
+    tris[base + 8] = verts[i2 + 2];
+  }
+  return tris;
+}
+
+function blobToBase64(blob) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(String(r.result).split(',')[1]);
+    r.onerror = () => rej(r.error);
+    r.readAsDataURL(blob);
+  });
+}
+
+/** Shrink a photo Blob/File on-device to a JPEG <= 700 KB and return { blob, base64 }. */
+export async function shrinkPhotoForForge(blob, maxSide = 1600) {
+  if (blob.size <= 700000 && /jpe?g/i.test(blob.type || '')) {
+    return { blob, base64: await blobToBase64(blob) };
+  }
+  const bmp = await createImageBitmap(blob);
+  const k = Math.min(1, maxSide / Math.max(bmp.width, bmp.height));
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(bmp.width * k));
+  c.height = Math.max(1, Math.round(bmp.height * k));
+  const g = c.getContext('2d');
+  g.fillStyle = '#fff';
+  g.fillRect(0, 0, c.width, c.height);
+  g.drawImage(bmp, 0, 0, c.width, c.height);
+  for (const q of [0.85, 0.75, 0.6, 0.45]) {
+    const out = await new Promise((r) => c.toBlob(r, 'image/jpeg', q));
+    if (out && out.size <= 700000) {
+      return { blob: out, base64: await blobToBase64(out) };
+    }
+  }
+  return shrinkPhotoForForge(blob, Math.round(maxSide * 0.7));
+}

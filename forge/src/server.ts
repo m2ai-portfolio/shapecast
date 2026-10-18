@@ -1,6 +1,6 @@
 /**
  * ShapeCast forge: remote MCP server for the claude.ai custom connector.
- * Phase 0b exposes probe tools only (status, payload size, file argument).
+ * Exposes production tools (forge_status, forge_generate, forge_job) and Phase 0b diagnostic probes.
  */
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from 'node:http';
 import { createHash } from 'node:crypto';
@@ -12,6 +12,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { z } from 'zod';
 import { createOAuth, type OAuth } from './oauth.js';
+import { comfyStatus, type ForgePipelineOptions, type ForgePipelineResult } from './comfy.js';
+import { createJobManager, type JobManager } from './jobs.js';
 
 export interface ForgeConfig {
   publicUrl: string;
@@ -20,6 +22,9 @@ export interface ForgeConfig {
   ownerPassphrase: string;
   comfyUrl: string;
   stateFile: string | null;
+  localOutDir?: string;
+  skipScp?: boolean;
+  pipelineRunner?: (opts: ForgePipelineOptions) => Promise<ForgePipelineResult>;
 }
 
 const MAX_BODY = 25 * 1024 * 1024; // a 16 MiB staged file arrives as ~21 MiB of base64
@@ -50,35 +55,13 @@ const json = (
   headers: Record<string, string> = {},
 ) => send(res, status, JSON.stringify(obj), { 'Content-Type': 'application/json', ...headers });
 
-async function comfyStatus(comfyUrl: string) {
-  const get = async (path: string) => {
-    const r = await fetch(`${comfyUrl}${path}`, { signal: AbortSignal.timeout(3000) });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    return r.json() as Promise<any>;
-  };
-  try {
-    const [stats, queue] = await Promise.all([get('/system_stats'), get('/queue')]);
-    const running = queue.queue_running?.length ?? 0,
-      pending = queue.queue_pending?.length ?? 0;
-    const dev = stats.devices?.[0];
-    return {
-      alienpc: running + pending > 0 ? 'busy' : 'available',
-      queue: { running, pending },
-      gpu: dev?.name ?? null,
-      vramFreeMB: dev?.vram_free ? Math.round(dev.vram_free / 1048576) : null,
-      comfyui: stats.system?.comfyui_version ?? null,
-    };
-  } catch (e) {
-    return { alienpc: 'unavailable', reason: (e as Error).message };
-  }
-}
-
-function buildMcp(cfg: ForgeConfig): McpServer {
-  const server = new McpServer({ name: 'shapecast-forge', version: '0.1.0' });
+function buildMcp(cfg: ForgeConfig, jobs: JobManager): McpServer {
+  const server = new McpServer({ name: 'shapecast-forge', version: '0.2.0' });
   const result = (obj: Record<string, unknown>) => ({
     content: [{ type: 'text' as const, text: JSON.stringify(obj) }],
     structuredContent: obj,
   });
+
   server.registerTool(
     'forge_status',
     {
@@ -87,8 +70,126 @@ function buildMcp(cfg: ForgeConfig): McpServer {
       inputSchema: {},
       annotations: { readOnlyHint: true },
     },
-    async () => result(await comfyStatus(cfg.comfyUrl)),
+    async () => {
+      const st = await comfyStatus(cfg.comfyUrl);
+      const active = jobs.activeJob();
+      if (active && st.alienpc === 'available') {
+        return result({
+          ...st,
+          alienpc: 'busy',
+          activeJob: { jobId: active.jobId, stage: active.stage, name: active.name },
+        });
+      }
+      return result({
+        ...st,
+        activeJob: active ? { jobId: active.jobId, stage: active.stage, name: active.name } : null,
+      });
+    },
   );
+
+  server.registerTool(
+    'forge_generate',
+    {
+      description:
+        'Start generating a watertight, Saturn 3-ready 3D mesh on AlienPC from a text prompt or an inline base64 JPEG photo. Fails fast if AlienPC is busy or offline. Poll forge_job with the returned jobId.',
+      inputSchema: {
+        prompt: z.string().max(1500).optional(),
+        photoBase64: z.string().max(10_000_000).optional(),
+        targetMm: z.number().min(10).max(218).optional(),
+        name: z.string().max(80).optional(),
+        seed: z.number().int().optional(),
+      },
+      annotations: { readOnlyHint: false },
+    },
+    async ({ prompt, photoBase64, targetMm, name, seed }) => {
+      const r = await jobs.startJob({ prompt, photoBase64, targetMm, name, seed });
+      if (!r.ok) {
+        return result({
+          ok: false,
+          status: 'error',
+          alienpc: r.alienpc,
+          error: r.reason,
+        });
+      }
+      return result({
+        ok: true,
+        jobId: r.job.jobId,
+        status: r.job.status,
+        stage: r.job.stage,
+        name: r.job.name,
+        targetMm: r.job.targetMm,
+      });
+    },
+  );
+
+  server.registerTool(
+    'forge_job',
+    {
+      description:
+        'Check the status of a forge_generate job. When status is "done", returns the repaired preview mesh, bounding box, Saturn 3 print checks, and the STL file path written to AlienPC.',
+      inputSchema: {
+        jobId: z.string().min(1).max(80),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    async ({ jobId }) => {
+      const job = jobs.getJob(jobId);
+      if (!job) {
+        return result({
+          ok: false,
+          jobId,
+          status: 'not_found',
+          error: `Unknown job ${jobId}`,
+        });
+      }
+      const elapsedSec = +(((job.finishedAt ?? Date.now()) - job.startedAt) / 1000).toFixed(1);
+      if (job.status === 'running') {
+        return result({
+          ok: true,
+          jobId: job.jobId,
+          status: 'running',
+          stage: job.stage,
+          name: job.name,
+          targetMm: job.targetMm,
+          elapsedSec,
+        });
+      }
+      if (job.status === 'error' || !job.result) {
+        return result({
+          ok: false,
+          jobId: job.jobId,
+          status: 'error',
+          stage: job.stage,
+          name: job.name,
+          elapsedSec,
+          error: job.error ?? 'Generation failed',
+        });
+      }
+      const res = job.result;
+      return result({
+        ok: true,
+        jobId: job.jobId,
+        status: 'done',
+        stage: 'done',
+        name: res.name,
+        targetMm: job.targetMm,
+        elapsedSec,
+        bbox: res.bbox,
+        volumeMm3: res.volumeMm3,
+        volumeMl: res.volumeMl,
+        triangleCount: res.triangleCount,
+        manifold: res.manifold,
+        checks: res.checks,
+        worst: res.worst,
+        layers: res.layers,
+        stlFilename: res.stlFilename,
+        stlPath: res.stlPath,
+        deliveredToAlienPc: res.deliveredToAlienPc,
+        preview: res.preview,
+      });
+    },
+  );
+
   server.registerTool(
     'forge_probe_payload',
     {
@@ -141,6 +242,12 @@ function saveState(oauth: OAuth, file: string | null) {
 export function createForgeServer(cfg: ForgeConfig): Server {
   const oauth = createOAuth(cfg);
   loadState(oauth, cfg.stateFile);
+  const jobs = createJobManager({
+    comfyUrl: cfg.comfyUrl,
+    localOutDir: cfg.localOutDir,
+    skipScp: cfg.skipScp,
+    runner: cfg.pipelineRunner,
+  });
   return createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://local');
     const path = url.pathname;
@@ -190,12 +297,16 @@ export function createForgeServer(cfg: ForgeConfig): Server {
         if (req.method !== 'POST')
           return json(res, 405, { error: 'method not allowed' }, { Allow: 'POST' });
         const body = JSON.parse(await readBody(req));
-        const rpc = (Array.isArray(body) ? body : [body]).map((m: any) => m?.method ?? 'response').join(',');
+        const rpc = (Array.isArray(body) ? body : [body])
+          .map((m: any) => m?.method ?? 'response')
+          .join(',');
         res.on('finish', () => {
           if (res.statusCode >= 400)
-            console.log(`  mcp ${rpc} protocol=${req.headers['mcp-protocol-version'] ?? '-'} accept=${req.headers.accept ?? '-'} -> ${res.statusCode}`);
+            console.log(
+              `  mcp ${rpc} protocol=${req.headers['mcp-protocol-version'] ?? '-'} accept=${req.headers.accept ?? '-'} -> ${res.statusCode}`,
+            );
         });
-        const server = buildMcp(cfg);
+        const server = buildMcp(cfg, jobs);
         const transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: undefined,
           enableJsonResponse: true,

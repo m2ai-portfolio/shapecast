@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { runPrintChecks, buildItems, polygonThickness, minFeature } from '../src/printcheck.js';
+import {
+  runPrintChecks,
+  runMeshPrintChecks,
+  buildItems,
+  polygonThickness,
+  minFeature,
+} from '../src/printcheck.js';
 
 const list = (parts) => ({
   name: 'f',
@@ -165,5 +171,17 @@ describe('print checks', () => {
     const r = run([box('base', [40, 40, 4], [0, 0, 0]), box('tower', [10, 10, 30], [60, 0, 15])]);
     expect(msgs(r)).toMatch(/red Below the build plate: base/);
     expect(r.worst).toBe('red');
+  });
+  it('runMeshPrintChecks evaluates fit, manifold, grounding, and hollowing advice', () => {
+    const ok = runMeshPrintChecks(
+      { min: [-33, -75, 0], max: [33, 75, 40], size: [66, 150, 40] },
+      204000,
+      true,
+      { layerUm: 50 },
+    );
+    expect(ok.worst).toBe('amber'); // 66x150 fits rotated 90 deg on 218.88x122.88 plate
+    expect(find(ok, 'manifold')[0].level).toBe('green');
+    expect(find(ok, 'volume')[0].message).toMatch(/hollow in Chitubox/);
+    expect(ok.layers[50]).toBe(800);
   });
 });

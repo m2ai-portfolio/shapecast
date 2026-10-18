@@ -444,6 +444,14 @@
   <section class="col">
     <div class="card">
       <h2>Capture</h2>
+      <div class="row" style="margin-bottom: 8px">
+        <label for="modeSelect" style="margin: 0">Engine</label
+        ><select id="modeSelect" style="flex: 1">
+          <option value="forge">Mesh Forge (Hunyuan3D)</option>
+          <option value="blocks">Parametric Blocks (Claude)</option>
+        </select>
+        <span id="forgeBadge" class="small"></span>
+      </div>
       <div id="dropWell" class="well">
         Drop photos here or
         <label class="inline-label"
@@ -460,15 +468,20 @@
         <div id="thumbs" class="thumbs"></div>
       </div>
       <label for="scaleRef" class="mt">Scale reference</label>
-      <input id="scaleRef" type="text" maxlength="300" placeholder="the coin is 24.26 mm across" />
+      <input
+        id="scaleRef"
+        type="text"
+        maxlength="300"
+        placeholder="120 mm longest side (or coin is 24.26 mm)"
+      />
       <label for="brief" class="mt">Brief</label>
       <textarea
         id="brief"
         maxlength="4000"
-        placeholder="a stand for my phone, slot 12 mm deep, 10 degree lean"
+        placeholder="a 1970 chevy chevelle miniature car, or a stand for my phone"
       ></textarea>
       <div class="row mt">
-        <button id="buildBtn" class="primary">Build model</button
+        <button id="buildBtn" class="primary">Generate mesh</button
         ><button id="stopBtn" class="hidden">Stop</button>
       </div>
       <div id="status"></div>
@@ -509,12 +522,13 @@
   </section>
   <section class="col">
     <div class="card">
-      <h2>Parts</h2>
+      <h2>Parts / Mesh</h2>
       <div class="row" style="margin-bottom: 8px">
         <label for="projectName" style="margin: 0">Name</label
         ><input id="projectName" type="text" maxlength="80" style="flex: 1" />
       </div>
-      <div style="overflow-x: auto">
+      <div id="forgeSummary" class="small hidden" style="margin-bottom: 8px"></div>
+      <div id="partsTableWrap" style="overflow-x: auto">
         <table id="partsTable">
           <thead>
             <tr>

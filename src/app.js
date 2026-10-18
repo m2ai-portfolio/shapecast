@@ -1,5 +1,5 @@
 import { validatePartList } from './schema.js';
-import { runPrintChecks } from './printcheck.js';
+import { runPrintChecks, runMeshPrintChecks } from './printcheck.js';
 import { writeBinaryStl, concatTriangles } from './stl.js';
 import { createRequestTracker, createSaveController } from './lifecycle.js';
 import { builderPrompt, editorPrompt } from './prompts.js';
@@ -15,11 +15,15 @@ import {
   META,
   geometryGate,
   createPartCache,
+  parseScaleRefMm,
+  unpackForgePreview,
+  shrinkPhotoForForge,
 } from './model.js';
 import { createViewport } from './viewport.js';
 
+const FORGE_SERVER = 'ShapeCast Forge';
 const $ = (id) => /** @type {any} */ (document.getElementById(id));
-const caps = { sample: null, downloads: null, db: null, assets: null, user: null };
+const caps = { sample: null, downloads: null, db: null, assets: null, user: null, mcp: null };
 let imageLimits = null,
   uid = null,
   viewport = null,
@@ -27,6 +31,9 @@ let imageLimits = null,
 const tracker = createRequestTracker();
 const partCache = createPartCache();
 const state = {
+  mode: 'forge',
+  forgeReady: false,
+  forgeMesh: null,
   project: null,
   unsavedRevisions: [],
   items: [],
@@ -66,7 +73,9 @@ function note(text) {
 }
 function setBusy(on, text) {
   $('status').textContent = text;
-  $('buildBtn').disabled = on || !caps.sample;
+  const canBuild = state.mode === 'forge' ? !!caps.mcp : !!caps.sample;
+  $('buildBtn').disabled = on || !canBuild;
+  $('buildBtn').textContent = state.mode === 'forge' ? 'Generate mesh' : 'Build model';
   $('sendBtn').disabled = on || !caps.sample;
   $('stopBtn').classList.toggle('hidden', !on);
 }
@@ -80,6 +89,43 @@ function addChat(role, text) {
 
 // ---------- render ----------
 function render() {
+  if (state.forgeMesh) {
+    const fm = state.forgeMesh;
+    const failed = !fm.manifold?.ok;
+    state.items = [
+      {
+        part: { id: 'forge_mesh', type: 'mesh' },
+        tris: fm.tris,
+        bbox: fm.bbox,
+        failed,
+        failure: fm.manifold?.errors?.[0] ?? null,
+      },
+    ];
+    state.result = runMeshPrintChecks(fm.bbox, fm.volumeMm3, !failed, { layerUm: state.layerUm });
+    viewport?.setItems(state.items, null);
+    $('partsTableWrap')?.classList.add('hidden');
+    const sum = $('forgeSummary');
+    if (sum) {
+      sum.classList.remove('hidden');
+      sum.textContent = `Hunyuan3D mesh: ${fm.triangleCount.toLocaleString()} tris | ${fm.volumeMl} mL | AlienPC STL: ${fm.stlPath}`;
+    }
+    renderChecks(failed);
+    $('assumptions').classList.add('hidden');
+    renderThumbs();
+    $('projectName').value = state.project.name;
+    $('brief').value = state.project.brief;
+    $('scaleRef').value = state.project.scaleRef;
+    $('bboxReadout').textContent = state.result.bbox
+      ? state.result.bbox.size.map((x) => x.toFixed(1)).join(' x ') + ' mm'
+      : '';
+    const canExportMesh = !failed && !!caps.downloads && fm.preview?.isFullMesh !== false;
+    $('exportBtn').disabled = !canExportMesh;
+    $('exportNote').textContent = fm.stlPath ? `Saved on AlienPC: ${fm.stlPath}` : '';
+    return;
+  }
+
+  $('partsTableWrap')?.classList.remove('hidden');
+  $('forgeSummary')?.classList.add('hidden');
   const list = state.project.current;
   const v = validatePartList(list);
   if (!v.ok) {
@@ -285,6 +331,7 @@ function applyList(list, { request = null, rename = false } = {}) {
     showError(`Rejected, the previous model is kept: ${gate.errors[0]}`);
     return false;
   }
+  state.forgeMesh = null;
   state.project.current = list;
   state.project.updatedAt = now;
   if (rename && typeof list.name === 'string') state.project.name = list.name.slice(0, META.name);
@@ -330,6 +377,152 @@ function addPhotos(files) {
     saveCtl.setPendingUploads(state.project.photos.filter((p) => !p.assetId).length);
   saveCtl.markChanged();
   renderThumbs();
+}
+
+// ---------- Mesh Forge (Hunyuan3D via MCP) ----------
+const STAGE_LABELS = {
+  queued: 'Queued on AlienPC...',
+  reference_image: '1/3 Generating reference image (Flux)...',
+  mesh_generation: '2/3 Sculpting 3D mesh (Hunyuan3D 2.1)...',
+  repair_and_export: '3/3 Repairing manifold & writing STL...',
+};
+
+async function refreshForgeStatus() {
+  const badge = $('forgeBadge');
+  if (!badge) return;
+  if (!caps.mcp) {
+    badge.textContent = 'MCP unavailable';
+    state.forgeReady = false;
+    return;
+  }
+  try {
+    const r = await caps.mcp.callTool(FORGE_SERVER, 'forge_status', {}, { cache: false });
+    const st = r?.payload;
+    if (st?.alienpc === 'available') {
+      badge.textContent = 'AlienPC ready';
+      badge.style.color = 'var(--green)';
+      state.forgeReady = true;
+    } else if (st?.alienpc === 'busy') {
+      badge.textContent = 'AlienPC busy';
+      badge.style.color = 'var(--amber)';
+      state.forgeReady = false;
+    } else {
+      badge.textContent = 'AlienPC offline';
+      badge.style.color = 'var(--red)';
+      state.forgeReady = false;
+    }
+  } catch {
+    badge.textContent = 'connector offline';
+    badge.style.color = 'var(--muted)';
+    state.forgeReady = false;
+  }
+}
+
+async function runForgeGenerate() {
+  if (!caps.mcp || state.inference) return;
+  const controller = new AbortController();
+  const token = tracker.token();
+  state.inference = { controller, token };
+  showError('');
+
+  const brief = state.project.brief.trim();
+  const photoFile = state.project.photos.map((p) => p.file).find(Boolean) ?? null;
+  if (!brief && !photoFile) {
+    showError('Nothing to generate: write a brief or attach a photo.');
+    state.inference = null;
+    setBusy(false, '');
+    return;
+  }
+
+  const targetMm = parseScaleRefMm(state.project.scaleRef, 120);
+  const name = state.project.name || brief.slice(0, 60) || 'forge-model';
+
+  try {
+    let photoBase64;
+    if (photoFile) {
+      setBusy(true, 'Preparing photo (shrinking <= 700 KB)...');
+      const shrunk = await shrinkPhotoForForge(photoFile);
+      photoBase64 = shrunk.base64;
+      note(`Sending photo to Mesh Forge (${Math.round(shrunk.blob.size / 1024)} KB JPEG).`);
+    }
+
+    setBusy(true, 'Contacting ShapeCast Forge on AlienPC...');
+    addChat(
+      'user',
+      `Forge mesh (${targetMm} mm): ${brief || '(from photo)'}${photoFile ? ' [+photo]' : ''}`,
+    );
+
+    const startRes = await caps.mcp.callTool(
+      FORGE_SERVER,
+      'forge_generate',
+      {
+        prompt: brief || undefined,
+        photoBase64,
+        targetMm,
+        name,
+      },
+      { cache: false },
+    );
+    const start = startRes?.payload;
+    if (!start?.ok) {
+      showError(start?.error || `Mesh Forge could not start (${start?.alienpc || 'error'}).`);
+      await refreshForgeStatus();
+      return;
+    }
+
+    const jobId = start.jobId;
+    while (!controller.signal.aborted) {
+      await new Promise((r) => setTimeout(r, 2500));
+      if (controller.signal.aborted) break;
+      const pollRes = await caps.mcp.callTool(
+        FORGE_SERVER,
+        'forge_job',
+        { jobId },
+        { cache: false },
+      );
+      const job = pollRes?.payload;
+      $('rawReply').textContent = JSON.stringify(
+        {
+          ...job,
+          preview: job?.preview
+            ? { ...job.preview, vertsBase64: '<omitted>', indicesBase64: '<omitted>' }
+            : undefined,
+        },
+        null,
+        2,
+      );
+      if (!job || job.status === 'error' || job.status === 'not_found') {
+        showError(job?.error || 'Mesh Forge generation failed.');
+        await refreshForgeStatus();
+        return;
+      }
+      if (job.status === 'running') {
+        const label = STAGE_LABELS[job.stage] || `Running (${job.stage})...`;
+        setBusy(true, `${label} (${job.elapsedSec ?? 0}s)`);
+        continue;
+      }
+      if (job.status === 'done') {
+        const tris = unpackForgePreview(job.preview);
+        state.forgeMesh = { ...job, tris };
+        if (job.name) state.project.name = String(job.name).slice(0, META.name);
+        render();
+        viewport?.fit(job.bbox);
+        addChat(
+          'claude',
+          `Mesh ready: ${job.triangleCount.toLocaleString()} watertight triangles (${job.bbox.size.map((x) => x.toFixed(1)).join(' x ')} mm). Written to AlienPC: ${job.stlPath}`,
+        );
+        await refreshForgeStatus();
+        return;
+      }
+    }
+  } catch (e) {
+    if (!controller.signal.aborted) {
+      showError(`Mesh Forge error: ${e?.message || e?.code || 'connection failed'}`);
+    }
+  } finally {
+    state.inference = null;
+    setBusy(false, '');
+  }
 }
 
 // ---------- Claude ----------
@@ -462,16 +655,34 @@ function handleSampleError(e) {
 // ---------- export ----------
 async function exportFile(kind) {
   const list = state.project.current,
-    slug = slugify(list.name);
+    name = state.forgeMesh ? state.project.name : list.name,
+    slug = slugify(name);
   let data, filename;
   if (kind === 'zip') {
     const zip = new JSZip();
     zip.file(
       `${slug}.stl`,
-      writeBinaryStl(concatTriangles(state.items.map((it) => it.tris)), list.name),
+      writeBinaryStl(concatTriangles(state.items.map((it) => it.tris)), name),
     );
-    zip.file(`${slug}.json`, JSON.stringify(list, null, 2));
-    zip.file('README.txt', readmeText({ list, result: state.result, layerUm: state.layerUm }));
+    if (!state.forgeMesh) {
+      zip.file(`${slug}.json`, JSON.stringify(list, null, 2));
+    }
+    zip.file(
+      'README.txt',
+      readmeText({
+        list: state.forgeMesh
+          ? {
+              ...list,
+              name,
+              assumptions: [
+                `Generated by ShapeCast Mesh Forge (${state.forgeMesh.triangleCount} triangles)`,
+              ],
+            }
+          : list,
+        result: state.result,
+        layerUm: state.layerUm,
+      }),
+    );
     data = await zip.generateAsync({ type: 'blob' });
     filename = `shapecast-${slug}.zip`;
   } else {
@@ -575,6 +786,7 @@ function installProject(project) {
   saveCtl?.dispose();
   state.inference?.controller.abort();
   partCache.clear();
+  state.forgeMesh = null;
   state.project = project;
   state.unsavedRevisions = [];
   state.selectedId = null;
@@ -642,6 +854,22 @@ async function doSwitchSave() {
 
 // ---------- init ----------
 async function init() {
+  const modeSel = /** @type {HTMLSelectElement} */ ($('modeSelect'));
+  if (modeSel) {
+    modeSel.addEventListener('change', () => {
+      state.mode = modeSel.value === 'blocks' ? 'blocks' : 'forge';
+      if (state.mode === 'blocks' && state.forgeMesh) {
+        state.forgeMesh = null;
+        render();
+      }
+      if (state.mode === 'forge') {
+        note('Photos are shrunk on-device (<= 700 KB JPEG) and sent directly to Mesh Forge.');
+      } else if (!imageLimits) {
+        note('Photos cannot be sent to Claude from this artifact yet; the brief alone is used.');
+      }
+      setBusy(Boolean(state.inference), $('status').textContent);
+    });
+  }
   $('photoInput').addEventListener('change', (e) => {
     const input = /** @type {HTMLInputElement} */ (e.target);
     addPhotos([...input.files]);
@@ -660,7 +888,9 @@ async function init() {
   });
   for (const id of ['projectName', 'brief', 'scaleRef'])
     $(id).addEventListener('change', metaChange);
-  $('buildBtn').addEventListener('click', () => runInference('build'));
+  $('buildBtn').addEventListener('click', () =>
+    state.mode === 'forge' ? runForgeGenerate() : runInference('build'),
+  );
   $('sendBtn').addEventListener('click', () => {
     const box = /** @type {HTMLInputElement} */ ($('chatInput'));
     const t = box.value.trim();
@@ -742,15 +972,30 @@ async function init() {
       caps[n] = (await window.claude?.use(n)) ?? null;
     }),
   );
+  if (caps.mcp) {
+    await refreshForgeStatus();
+    note('Photos are shrunk on-device (<= 700 KB JPEG) and sent directly to Mesh Forge.');
+  } else if (modeSel) {
+    state.mode = 'blocks';
+    modeSel.value = 'blocks';
+    await refreshForgeStatus();
+  }
   if (caps.sample) {
     const lim = await caps.sample.limits().catch(() => null);
     imageLimits = lim?.images ?? null;
-    if (!imageLimits)
+    if (!imageLimits && state.mode === 'blocks')
       note('Photos cannot be sent to Claude from this artifact yet; the brief alone is used.');
-    else
+    else if (imageLimits)
       /** @type {HTMLInputElement} */ ($('photoInput')).accept = imageLimits.mediaTypes.join(',');
     setBusy(false, '');
-  } else setBusy(false, 'Claude is unavailable in this view; you can still edit and export.');
+  } else {
+    setBusy(
+      false,
+      caps.mcp
+        ? ''
+        : 'Claude and Mesh Forge are unavailable in this view; you can still edit and export.',
+    );
+  }
   if (!caps.downloads) {
     $('exportBtn').disabled = true;
     $('exportJsonBtn').disabled = true;

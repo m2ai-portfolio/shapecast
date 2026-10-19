@@ -12,7 +12,12 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { z } from 'zod';
 import { createOAuth, type OAuth } from './oauth.js';
-import { comfyStatus, type ForgePipelineOptions, type ForgePipelineResult } from './comfy.js';
+import {
+  comfyStatus,
+  runBlenderScriptOnAlienPc,
+  type ForgePipelineOptions,
+  type ForgePipelineResult,
+} from './comfy.js';
 import { createJobManager, type JobManager } from './jobs.js';
 
 export interface ForgeConfig {
@@ -187,6 +192,56 @@ function buildMcp(cfg: ForgeConfig, jobs: JobManager): McpServer {
         deliveredToAlienPc: res.deliveredToAlienPc,
         preview: res.preview,
       });
+    },
+  );
+
+  server.registerTool(
+    'forge_blender',
+    {
+      description:
+        'Execute a headless Blender 4.3 Python (bpy) script on AlienPC, voxel-remesh and smooth the resulting geometry, write the binary STL to AlienPC, and return the watertight 3D preview mesh and Saturn 3 print checks.',
+      inputSchema: {
+        pythonCode: z.string().min(5).max(50_000),
+        targetMm: z.number().min(10).max(218).optional(),
+        name: z.string().max(80).optional(),
+      },
+      annotations: { readOnlyHint: false },
+    },
+    async ({ pythonCode, targetMm, name }) => {
+      try {
+        const res = await runBlenderScriptOnAlienPc({
+          comfyUrl: cfg.comfyUrl,
+          pythonCode,
+          targetMm: targetMm ?? 120,
+          name: name ?? 'blender-model',
+          localOutDir: cfg.localOutDir,
+          skipScp: cfg.skipScp,
+        });
+        return result({
+          ok: true,
+          status: 'done',
+          name: res.name,
+          targetMm: targetMm ?? 120,
+          bbox: res.bbox,
+          volumeMm3: res.volumeMm3,
+          volumeMl: res.volumeMl,
+          triangleCount: res.triangleCount,
+          manifold: res.manifold,
+          checks: res.checks,
+          worst: res.worst,
+          layers: res.layers,
+          stlFilename: res.stlFilename,
+          stlPath: res.stlPath,
+          deliveredToAlienPc: res.deliveredToAlienPc,
+          preview: res.preview,
+        });
+      } catch (e) {
+        return result({
+          ok: false,
+          status: 'error',
+          error: (e as Error).message,
+        });
+      }
     },
   );
 

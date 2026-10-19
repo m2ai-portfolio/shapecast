@@ -201,10 +201,13 @@ export function unpackForgePreview(preview) {
     vBytes.byteOffset,
     Math.floor(vBytes.byteLength / 4),
   );
-  const indices =
-    preview.format === 'indexed-f32-u16-v1'
-      ? new Uint16Array(iBytes.buffer, iBytes.byteOffset, Math.floor(iBytes.byteLength / 2))
-      : new Uint32Array(iBytes.buffer, iBytes.byteOffset, Math.floor(iBytes.byteLength / 4));
+  const isU16 =
+    preview.indexBits === 16 ||
+    preview.format === 'indexed-f32-u16-v1' ||
+    (!preview.indexBits && !preview.format && preview.vertexCount <= 65535);
+  const indices = isU16
+    ? new Uint16Array(iBytes.buffer, iBytes.byteOffset, Math.floor(iBytes.byteLength / 2))
+    : new Uint32Array(iBytes.buffer, iBytes.byteOffset, Math.floor(iBytes.byteLength / 4));
   const triCount = Math.floor(indices.length / 3);
   const tris = new Float64Array(triCount * 9);
   for (let t = 0; t < triCount; t++) {

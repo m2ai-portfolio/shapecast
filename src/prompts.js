@@ -45,7 +45,7 @@ ${RULES}
 
 ${SCHEMA_TEXT}
 
-Reply with only the JSON object.`;
+  Reply with only the JSON object.`;
 }
 
 export function editorPrompt({ partList, request }) {
@@ -61,4 +61,22 @@ ${RULES}
 ${SCHEMA_TEXT}
 
 Reply with only the JSON object.`;
+}
+
+export function blenderPrompt({ brief, scaleRef }) {
+  return `You are a 3D CAD & Blender 4.3 Python (bpy) engineer building a single connected, watertight 3D mesh for an Elegoo Saturn 3 resin printer.
+Brief: ${brief && brief.trim() ? brief.trim() : '(none)'}
+Scale reference: ${scaleRef && scaleRef.trim() ? scaleRef.trim() : '120 mm longest horizontal dimension'}
+
+Write a self-contained Blender 4.3 Python script in "pythonCode" that builds the requested 3D object using bpy.ops.meshprimitives, bmesh, modifiers (SUBSURF, BEVEL, BOOLEAN, SOLIDIFY), or procedural geometry.
+Rules for pythonCode:
+- Do NOT call bpy.ops.wm.read_factory_settings or export functions (the runner clears the scene before your code and exports all MESH objects after).
+- Make sure all parts overlap so they form a single connected solid when voxel-remeshed.
+- Use Z as up, units in millimetres.
+
+Return ONLY a JSON object with this schema:
+{
+  "name": string (1-60 chars),
+  "pythonCode": string (valid Blender 4.3 Python script using bpy/bmesh/mathutils)
+}`;
 }

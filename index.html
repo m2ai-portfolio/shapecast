@@ -447,8 +447,9 @@
       <div class="row" style="margin-bottom: 8px">
         <label for="modeSelect" style="margin: 0">Engine</label
         ><select id="modeSelect" style="flex: 1">
-          <option value="forge">Mesh Forge (Hunyuan3D)</option>
-          <option value="blocks">Parametric Blocks (Claude)</option>
+          <option value="forge">Mesh Forge (Hunyuan3D + Blender)</option>
+          <option value="blender">Blender 3D (Claude bpy -> AlienPC)</option>
+          <option value="blocks">Parametric Blocks (Claude Local)</option>
         </select>
         <span id="forgeBadge" class="small"></span>
       </div>
@@ -1870,7 +1871,7 @@ ${RULES}
 
 ${SCHEMA_TEXT}
 
-Reply with only the JSON object.`;
+  Reply with only the JSON object.`;
 }
 
 function editorPrompt({ partList, request }) {
@@ -1886,6 +1887,24 @@ ${RULES}
 ${SCHEMA_TEXT}
 
 Reply with only the JSON object.`;
+}
+
+function blenderPrompt({ brief, scaleRef }) {
+  return `You are a 3D CAD & Blender 4.3 Python (bpy) engineer building a single connected, watertight 3D mesh for an Elegoo Saturn 3 resin printer.
+Brief: ${brief && brief.trim() ? brief.trim() : '(none)'}
+Scale reference: ${scaleRef && scaleRef.trim() ? scaleRef.trim() : '120 mm longest horizontal dimension'}
+
+Write a self-contained Blender 4.3 Python script in "pythonCode" that builds the requested 3D object using bpy.ops.meshprimitives, bmesh, modifiers (SUBSURF, BEVEL, BOOLEAN, SOLIDIFY), or procedural geometry.
+Rules for pythonCode:
+- Do NOT call bpy.ops.wm.read_factory_settings or export functions (the runner clears the scene before your code and exports all MESH objects after).
+- Make sure all parts overlap so they form a single connected solid when voxel-remeshed.
+- Use Z as up, units in millimetres.
+
+Return ONLY a JSON object with this schema:
+{
+  "name": string (1-60 chars),
+  "pythonCode": string (valid Blender 4.3 Python script using bpy/bmesh/mathutils)
+}`;
 }
 
 // --- exportbundle.js ---
@@ -2129,10 +2148,13 @@ function unpackForgePreview(preview) {
     vBytes.byteOffset,
     Math.floor(vBytes.byteLength / 4),
   );
-  const indices =
-    preview.format === 'indexed-f32-u16-v1'
-      ? new Uint16Array(iBytes.buffer, iBytes.byteOffset, Math.floor(iBytes.byteLength / 2))
-      : new Uint32Array(iBytes.buffer, iBytes.byteOffset, Math.floor(iBytes.byteLength / 4));
+  const isU16 =
+    preview.indexBits === 16 ||
+    preview.format === 'indexed-f32-u16-v1' ||
+    (!preview.indexBits && !preview.format && preview.vertexCount <= 65535);
+  const indices = isU16
+    ? new Uint16Array(iBytes.buffer, iBytes.byteOffset, Math.floor(iBytes.byteLength / 2))
+    : new Uint32Array(iBytes.buffer, iBytes.byteOffset, Math.floor(iBytes.byteLength / 4));
   const triCount = Math.floor(indices.length / 3);
   const tris = new Float64Array(triCount * 9);
   for (let t = 0; t < triCount; t++) {
@@ -2436,9 +2458,19 @@ function note(text) {
 }
 function setBusy(on, text) {
   $('status').textContent = text;
-  const canBuild = state.mode === 'forge' ? !!caps.mcp : !!caps.sample;
+  const canBuild =
+    state.mode === 'forge'
+      ? !!caps.mcp
+      : state.mode === 'blender'
+        ? !!(caps.mcp && caps.sample)
+        : !!caps.sample;
   $('buildBtn').disabled = on || !canBuild;
-  $('buildBtn').textContent = state.mode === 'forge' ? 'Generate mesh' : 'Build model';
+  $('buildBtn').textContent =
+    state.mode === 'forge'
+      ? 'Generate mesh'
+      : state.mode === 'blender'
+        ? 'Build in Blender'
+        : 'Build model';
   $('sendBtn').disabled = on || !caps.sample;
   $('stopBtn').classList.toggle('hidden', !on);
 }
@@ -2783,6 +2815,7 @@ async function refreshForgeStatus() {
 
 async function runForgeGenerate() {
   if (!caps.mcp || state.inference) return;
+  metaChange();
   const controller = new AbortController();
   const token = tracker.token();
   state.inference = { controller, token };
@@ -2798,7 +2831,13 @@ async function runForgeGenerate() {
   }
 
   const targetMm = parseScaleRefMm(state.project.scaleRef, 120);
-  const name = state.project.name || brief.slice(0, 60) || 'forge-model';
+  const customName =
+    state.project.name && state.project.name !== SAMPLE_LIST.name ? state.project.name : '';
+  const name =
+    customName ||
+    brief.slice(0, 60) ||
+    (photoFile?.name ? photoFile.name.replace(/\.\w+$/, '') : '') ||
+    'forge-model';
 
   try {
     let photoBase64;
@@ -2888,9 +2927,80 @@ async function runForgeGenerate() {
   }
 }
 
+async function runBlenderGenerate() {
+  if (!caps.mcp || !caps.sample || state.inference) return;
+  metaChange();
+  const controller = new AbortController();
+  const token = tracker.token();
+  state.inference = { controller, token };
+  showError('');
+
+  const brief = state.project.brief.trim();
+  if (!brief) {
+    showError('Write a brief describing the 3D object to build in Blender.');
+    state.inference = null;
+    setBusy(false, '');
+    return;
+  }
+
+  const targetMm = parseScaleRefMm(state.project.scaleRef, 120);
+  try {
+    setBusy(true, '1/2 Claude writing Blender 4.3 Python (bpy) script...');
+    addChat('user', `Blender 3D (${targetMm} mm): ${brief}`);
+    const reply = await caps.sample.json(
+      blenderPrompt({ brief, scaleRef: state.project.scaleRef }),
+      {
+        signal: controller.signal,
+        modelTier: 'complex',
+        cache: false,
+        onText: ({ text }) => {
+          $('rawReply').textContent = text;
+        },
+      },
+    );
+    if (!reply?.pythonCode || typeof reply.pythonCode !== 'string') {
+      showError('Claude did not return a valid Blender Python script.');
+      return;
+    }
+    setBusy(true, '2/2 Running headless Blender 4.3 + Voxel Remesh on AlienPC...');
+    const res = await caps.mcp.callTool(
+      FORGE_SERVER,
+      'forge_blender',
+      {
+        pythonCode: reply.pythonCode,
+        targetMm,
+        name: reply.name || brief.slice(0, 60) || 'blender-model',
+      },
+      { cache: false },
+    );
+    const out = res?.payload;
+    if (!out?.ok) {
+      showError(out?.error || 'Blender execution on AlienPC failed.');
+      return;
+    }
+    const tris = unpackForgePreview(out.preview);
+    state.forgeMesh = { ...out, tris };
+    if (out.name) state.project.name = String(out.name).slice(0, META.name);
+    render();
+    viewport?.fit(out.bbox);
+    addChat(
+      'claude',
+      `Blender 4.3 mesh ready: ${out.triangleCount.toLocaleString()} watertight triangles (${out.bbox.size.map((x) => x.toFixed(1)).join(' x ')} mm). Written to AlienPC: ${out.stlPath}`,
+    );
+  } catch (e) {
+    if (!controller.signal.aborted) {
+      showError(`Blender error: ${e?.message || e?.code || 'failed'}`);
+    }
+  } finally {
+    state.inference = null;
+    setBusy(false, '');
+  }
+}
+
 // ---------- Claude ----------
 async function runInference(kind, requestText) {
   if (!caps.sample || state.inference) return;
+  metaChange();
   const controller = new AbortController(),
     token = tracker.token();
   state.inference = { controller, token };
@@ -3220,13 +3330,16 @@ async function init() {
   const modeSel = /** @type {HTMLSelectElement} */ ($('modeSelect'));
   if (modeSel) {
     modeSel.addEventListener('change', () => {
-      state.mode = modeSel.value === 'blocks' ? 'blocks' : 'forge';
+      state.mode =
+        modeSel.value === 'blocks' ? 'blocks' : modeSel.value === 'blender' ? 'blender' : 'forge';
       if (state.mode === 'blocks' && state.forgeMesh) {
         state.forgeMesh = null;
         render();
       }
       if (state.mode === 'forge') {
         note('Photos are shrunk on-device (<= 700 KB JPEG) and sent directly to Mesh Forge.');
+      } else if (state.mode === 'blender') {
+        note('Claude writes a Blender 4.3 bpy script and runs it headless on AlienPC.');
       } else if (!imageLimits) {
         note('Photos cannot be sent to Claude from this artifact yet; the brief alone is used.');
       }
@@ -3252,7 +3365,11 @@ async function init() {
   for (const id of ['projectName', 'brief', 'scaleRef'])
     $(id).addEventListener('change', metaChange);
   $('buildBtn').addEventListener('click', () =>
-    state.mode === 'forge' ? runForgeGenerate() : runInference('build'),
+    state.mode === 'forge'
+      ? runForgeGenerate()
+      : state.mode === 'blender'
+        ? runBlenderGenerate()
+        : runInference('build'),
   );
   $('sendBtn').addEventListener('click', () => {
     const box = /** @type {HTMLInputElement} */ ($('chatInput'));

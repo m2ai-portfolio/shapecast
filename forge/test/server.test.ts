@@ -88,10 +88,11 @@ describe('forge server', () => {
       'resource_metadata="https://forge.example/.well-known/oauth-protected-resource/mcp"',
     );
   });
-  it('lists the five forge tools after initialize', async () => {
+  it('lists the six forge tools after initialize', async () => {
     await rpc('initialize', init);
     const list = await rpc('tools/list', {});
     expect(list.result.tools.map((t: any) => t.name).sort()).toEqual([
+      'forge_blender',
       'forge_generate',
       'forge_job',
       'forge_probe_file',

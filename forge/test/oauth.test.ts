@@ -78,7 +78,9 @@ describe('authorize', () => {
   });
   it('rejects an unknown client and a missing or non-S256 PKCE challenge', async () => {
     expect((await make().authorizePage(authParams({ client_id: 'other' }))).status).toBe(400);
-    expect((await make().authorizePage(authParams({ code_challenge_method: 'plain' }))).status).toBe(400);
+    expect(
+      (await make().authorizePage(authParams({ code_challenge_method: 'plain' }))).status,
+    ).toBe(400);
     expect((await make().authorizePage(authParams({ code_challenge: '' }))).status).toBe(400);
   });
   it('a wrong passphrase issues no code and re-renders the form', async () => {

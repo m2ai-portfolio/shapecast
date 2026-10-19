@@ -249,6 +249,121 @@ export interface ForgePipelineResult extends PreparedMeshResult {
   deliveredToAlienPc: boolean;
 }
 
+export function runBlenderPostProcessOnAlienPc(
+  inputFilename: string,
+  subfolder: string,
+  outGlbFilename: string,
+  targetMm: number,
+  gridRes: number,
+  sshHost = process.env.FORGE_ALIENPC_SSH ?? 'gaming-pc',
+): boolean {
+  const inPath = `C:/Users/matth/ComfyUI/output/${subfolder ? `${subfolder}/` : ''}${inputFilename}`;
+  const outPath = `C:/Users/matth/ComfyUI/output/shapecast/${outGlbFilename}`;
+  const cmd = `C:\\Blender\\blender-4.3.2-windows-x64\\blender.exe --background --python C:\\Blender\\blender_postprocess.py -- --input "${inPath}" --output-glb "${outPath}" --target-mm ${targetMm} --grid-res ${gridRes}`;
+  try {
+    const out = execFileSync(
+      'ssh',
+      ['-n', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', sshHost, cmd],
+      { timeout: 30_000, stdio: 'pipe', encoding: 'utf8' },
+    );
+    return out.includes('BLENDER_POSTPROCESS_JSON:');
+  } catch {
+    return false;
+  }
+}
+
+export async function runBlenderScriptOnAlienPc({
+  comfyUrl,
+  pythonCode,
+  name = 'blender-model',
+  targetMm = 120,
+  gridRes = 125,
+  localOutDir,
+  skipScp = false,
+  sshHost = process.env.FORGE_ALIENPC_SSH ?? 'gaming-pc',
+}: {
+  comfyUrl: string;
+  pythonCode: string;
+  name?: string;
+  targetMm?: number;
+  gridRes?: number;
+  localOutDir?: string;
+  skipScp?: boolean;
+  sshHost?: string;
+}): Promise<ForgePipelineResult> {
+  const label = (name?.trim() || 'blender-model').slice(0, 80);
+  const slug = slugify(label);
+  const runId = `sc_bpy_${Date.now().toString(36)}_${slug.slice(0, 12)}`;
+  const outGlbFilename = `${runId}_blender.glb`;
+  const remoteScriptPath = `C:/Blender/${runId}.py`;
+  const localScriptDir = localOutDir ?? join(tmpdir(), 'shapecast-forge-out');
+  mkdirSync(localScriptDir, { recursive: true });
+  const localScriptPath = join(localScriptDir, `${runId}.py`);
+
+  const wrappedScript = `import bpy, os
+bpy.ops.wm.read_factory_settings(use_empty=True)
+# --- user bpy script ---
+${pythonCode}
+# --- export all meshes to GLB for ShapeCast ---
+mesh_objs = [o for o in bpy.context.scene.objects if o.type == 'MESH' and len(o.data.polygons) > 0]
+if not mesh_objs:
+    raise RuntimeError('Blender script produced no mesh objects')
+os.makedirs('C:/Users/matth/ComfyUI/output/shapecast', exist_ok=True)
+bpy.ops.export_scene.gltf(filepath='C:/Users/matth/ComfyUI/output/shapecast/${outGlbFilename}', export_format='GLB')
+print('BLENDER_SCRIPT_OK')
+`;
+  writeFileSync(localScriptPath, wrappedScript, 'utf8');
+
+  execFileSync(
+    'scp',
+    [
+      '-o',
+      'BatchMode=yes',
+      '-o',
+      'ConnectTimeout=10',
+      localScriptPath,
+      `${sshHost}:${remoteScriptPath}`,
+    ],
+    { timeout: 15_000, stdio: 'pipe' },
+  );
+
+  const cmd = `C:\\Blender\\blender-4.3.2-windows-x64\\blender.exe --background --python "${remoteScriptPath}" & del "${remoteScriptPath.replace(/\//g, '\\')}"`;
+  const stdout = execFileSync(
+    'ssh',
+    ['-n', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', sshHost, cmd],
+    { timeout: 45_000, stdio: 'pipe', encoding: 'utf8' },
+  );
+  if (!stdout.includes('BLENDER_SCRIPT_OK')) {
+    throw new Error('Blender script did not complete cleanly');
+  }
+
+  // Also run blender_postprocess on the exported GLB so it is voxel-remeshed & smoothed in Blender
+  const postGlbFilename = `${runId}_post.glb`;
+  const postOk = runBlenderPostProcessOnAlienPc(
+    outGlbFilename,
+    'shapecast',
+    postGlbFilename,
+    targetMm,
+    gridRes,
+    sshHost,
+  );
+  const finalGlbName = postOk ? postGlbFilename : outGlbFilename;
+  const glbBytes = await fetchComfyView(comfyUrl, finalGlbName, 'shapecast', 'output');
+  const rawTris = await parseGlbTriangles(glbBytes);
+  const prepared = repairAndPrepareMesh(rawTris, { targetMm, gridRes });
+  if (!prepared.manifold.ok) {
+    throw new Error(`Mesh repair failed manifold check: ${prepared.manifold.errors.join('; ')}`);
+  }
+  const stlFilename = `${dateStamp()}-${slug}.stl`;
+  const stlBuf = writeBinaryStl(prepared.tris, label);
+  const delivery = deliverStlToAlienPc(stlBuf, stlFilename, { localOutDir, skipScp, sshHost });
+  return {
+    ...prepared,
+    name: label,
+    ...delivery,
+  };
+}
+
 export async function runForgePipeline(opts: ForgePipelineOptions): Promise<ForgePipelineResult> {
   const {
     comfyUrl,
@@ -302,10 +417,28 @@ export async function runForgePipeline(opts: ForgePipelineOptions): Promise<Forg
   const hyWf = buildHunyuanWorkflow(inputImageName, runId, seed);
   const hyOut = await runComfyWorkflow(comfyUrl, hyWf, { pollMs });
   const glbFile = extractSavedFile(hyOut['10'], `${runId}_00001_.glb`);
-  const glbBytes = await fetchComfyView(comfyUrl, glbFile.filename, glbFile.subfolder, 'output');
 
-  // 4. Watertight manifold repair, scale, print checks & STL delivery
+  // 4. Blender 4.3 headless post-process (OpenVDB Voxel Remesh + Smooth) + watertight manifold repair & STL delivery
   onStage?.('repair_and_export');
+  let glbBytes: Uint8Array;
+  if (!skipScp) {
+    const blenderGlbName = `${runId}_blender.glb`;
+    const blenderOk = runBlenderPostProcessOnAlienPc(
+      glbFile.filename,
+      glbFile.subfolder,
+      blenderGlbName,
+      targetMm,
+      gridRes,
+    );
+    if (blenderOk) {
+      glbBytes = await fetchComfyView(comfyUrl, blenderGlbName, 'shapecast', 'output');
+    } else {
+      glbBytes = await fetchComfyView(comfyUrl, glbFile.filename, glbFile.subfolder, 'output');
+    }
+  } else {
+    glbBytes = await fetchComfyView(comfyUrl, glbFile.filename, glbFile.subfolder, 'output');
+  }
+
   const rawTris = await parseGlbTriangles(glbBytes);
   const prepared = repairAndPrepareMesh(rawTris, { targetMm, gridRes });
   if (!prepared.manifold.ok) {

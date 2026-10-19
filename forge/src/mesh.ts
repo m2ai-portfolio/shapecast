@@ -30,6 +30,7 @@ export interface PrintCheckChip {
 }
 
 export interface PackedMeshPreview {
+  format: 'indexed-f32-u16-v1' | 'indexed-f32-u32-v1';
   vertsBase64: string;
   indicesBase64: string;
   indexBits: 16 | 32;
@@ -696,6 +697,7 @@ export function packIndexedMesh(mesh: IndexedMesh, isFullMesh: boolean): PackedM
     'base64',
   );
   return {
+    format: indexBits === 16 ? 'indexed-f32-u16-v1' : 'indexed-f32-u32-v1',
     vertsBase64,
     indicesBase64,
     indexBits,

@@ -2,7 +2,7 @@ import { validatePartList } from './schema.js';
 import { runPrintChecks, runMeshPrintChecks } from './printcheck.js';
 import { writeBinaryStl, concatTriangles } from './stl.js';
 import { createRequestTracker, createSaveController } from './lifecycle.js';
-import { builderPrompt, editorPrompt } from './prompts.js';
+import { builderPrompt, editorPrompt, blenderPrompt } from './prompts.js';
 import { slugify, readmeText, truncateRequest } from './exportbundle.js';
 import {
   FIELDS,
@@ -73,9 +73,19 @@ function note(text) {
 }
 function setBusy(on, text) {
   $('status').textContent = text;
-  const canBuild = state.mode === 'forge' ? !!caps.mcp : !!caps.sample;
+  const canBuild =
+    state.mode === 'forge'
+      ? !!caps.mcp
+      : state.mode === 'blender'
+        ? !!(caps.mcp && caps.sample)
+        : !!caps.sample;
   $('buildBtn').disabled = on || !canBuild;
-  $('buildBtn').textContent = state.mode === 'forge' ? 'Generate mesh' : 'Build model';
+  $('buildBtn').textContent =
+    state.mode === 'forge'
+      ? 'Generate mesh'
+      : state.mode === 'blender'
+        ? 'Build in Blender'
+        : 'Build model';
   $('sendBtn').disabled = on || !caps.sample;
   $('stopBtn').classList.toggle('hidden', !on);
 }
@@ -420,6 +430,7 @@ async function refreshForgeStatus() {
 
 async function runForgeGenerate() {
   if (!caps.mcp || state.inference) return;
+  metaChange();
   const controller = new AbortController();
   const token = tracker.token();
   state.inference = { controller, token };
@@ -435,7 +446,13 @@ async function runForgeGenerate() {
   }
 
   const targetMm = parseScaleRefMm(state.project.scaleRef, 120);
-  const name = state.project.name || brief.slice(0, 60) || 'forge-model';
+  const customName =
+    state.project.name && state.project.name !== SAMPLE_LIST.name ? state.project.name : '';
+  const name =
+    customName ||
+    brief.slice(0, 60) ||
+    (photoFile?.name ? photoFile.name.replace(/\.\w+$/, '') : '') ||
+    'forge-model';
 
   try {
     let photoBase64;
@@ -525,9 +542,80 @@ async function runForgeGenerate() {
   }
 }
 
+async function runBlenderGenerate() {
+  if (!caps.mcp || !caps.sample || state.inference) return;
+  metaChange();
+  const controller = new AbortController();
+  const token = tracker.token();
+  state.inference = { controller, token };
+  showError('');
+
+  const brief = state.project.brief.trim();
+  if (!brief) {
+    showError('Write a brief describing the 3D object to build in Blender.');
+    state.inference = null;
+    setBusy(false, '');
+    return;
+  }
+
+  const targetMm = parseScaleRefMm(state.project.scaleRef, 120);
+  try {
+    setBusy(true, '1/2 Claude writing Blender 4.3 Python (bpy) script...');
+    addChat('user', `Blender 3D (${targetMm} mm): ${brief}`);
+    const reply = await caps.sample.json(
+      blenderPrompt({ brief, scaleRef: state.project.scaleRef }),
+      {
+        signal: controller.signal,
+        modelTier: 'complex',
+        cache: false,
+        onText: ({ text }) => {
+          $('rawReply').textContent = text;
+        },
+      },
+    );
+    if (!reply?.pythonCode || typeof reply.pythonCode !== 'string') {
+      showError('Claude did not return a valid Blender Python script.');
+      return;
+    }
+    setBusy(true, '2/2 Running headless Blender 4.3 + Voxel Remesh on AlienPC...');
+    const res = await caps.mcp.callTool(
+      FORGE_SERVER,
+      'forge_blender',
+      {
+        pythonCode: reply.pythonCode,
+        targetMm,
+        name: reply.name || brief.slice(0, 60) || 'blender-model',
+      },
+      { cache: false },
+    );
+    const out = res?.payload;
+    if (!out?.ok) {
+      showError(out?.error || 'Blender execution on AlienPC failed.');
+      return;
+    }
+    const tris = unpackForgePreview(out.preview);
+    state.forgeMesh = { ...out, tris };
+    if (out.name) state.project.name = String(out.name).slice(0, META.name);
+    render();
+    viewport?.fit(out.bbox);
+    addChat(
+      'claude',
+      `Blender 4.3 mesh ready: ${out.triangleCount.toLocaleString()} watertight triangles (${out.bbox.size.map((x) => x.toFixed(1)).join(' x ')} mm). Written to AlienPC: ${out.stlPath}`,
+    );
+  } catch (e) {
+    if (!controller.signal.aborted) {
+      showError(`Blender error: ${e?.message || e?.code || 'failed'}`);
+    }
+  } finally {
+    state.inference = null;
+    setBusy(false, '');
+  }
+}
+
 // ---------- Claude ----------
 async function runInference(kind, requestText) {
   if (!caps.sample || state.inference) return;
+  metaChange();
   const controller = new AbortController(),
     token = tracker.token();
   state.inference = { controller, token };
@@ -857,13 +945,16 @@ async function init() {
   const modeSel = /** @type {HTMLSelectElement} */ ($('modeSelect'));
   if (modeSel) {
     modeSel.addEventListener('change', () => {
-      state.mode = modeSel.value === 'blocks' ? 'blocks' : 'forge';
+      state.mode =
+        modeSel.value === 'blocks' ? 'blocks' : modeSel.value === 'blender' ? 'blender' : 'forge';
       if (state.mode === 'blocks' && state.forgeMesh) {
         state.forgeMesh = null;
         render();
       }
       if (state.mode === 'forge') {
         note('Photos are shrunk on-device (<= 700 KB JPEG) and sent directly to Mesh Forge.');
+      } else if (state.mode === 'blender') {
+        note('Claude writes a Blender 4.3 bpy script and runs it headless on AlienPC.');
       } else if (!imageLimits) {
         note('Photos cannot be sent to Claude from this artifact yet; the brief alone is used.');
       }
@@ -889,7 +980,11 @@ async function init() {
   for (const id of ['projectName', 'brief', 'scaleRef'])
     $(id).addEventListener('change', metaChange);
   $('buildBtn').addEventListener('click', () =>
-    state.mode === 'forge' ? runForgeGenerate() : runInference('build'),
+    state.mode === 'forge'
+      ? runForgeGenerate()
+      : state.mode === 'blender'
+        ? runBlenderGenerate()
+        : runInference('build'),
   );
   $('sendBtn').addEventListener('click', () => {
     const box = /** @type {HTMLInputElement} */ ($('chatInput'));

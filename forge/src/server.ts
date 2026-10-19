@@ -15,6 +15,7 @@ import { createOAuth, type OAuth } from './oauth.js';
 import {
   comfyStatus,
   runBlenderScriptOnAlienPc,
+  runBlenderRefineOnAlienPc,
   type ForgePipelineOptions,
   type ForgePipelineResult,
 } from './comfy.js';
@@ -61,7 +62,7 @@ const json = (
 ) => send(res, status, JSON.stringify(obj), { 'Content-Type': 'application/json', ...headers });
 
 function buildMcp(cfg: ForgeConfig, jobs: JobManager): McpServer {
-  const FORGE_VERSION = '2.3.0';
+  const FORGE_VERSION = '2.4.0';
   const BLENDER_VERSION = '4.3.2';
   const server = new McpServer({ name: 'shapecast-forge', version: FORGE_VERSION });
   const result = (obj: Record<string, unknown>) => ({
@@ -109,11 +110,18 @@ function buildMcp(cfg: ForgeConfig, jobs: JobManager): McpServer {
         targetMm: z.number().min(10).max(218).optional(),
         name: z.string().max(80).optional(),
         seed: z.number().int().optional(),
+        octreeResolution: z.number().int().min(192).max(512).optional(),
+        steps: z.number().int().min(15).max(60).optional(),
+        gridRes: z.number().int().min(180).max(360).optional(),
+        maxVerts: z.number().int().min(20000).max(62000).optional(),
+        smoothIterations: z.number().int().min(0).max(10).optional(),
+        smoothFactor: z.number().min(0.05).max(1.0).optional(),
+        aspectRatioTarget: z.tuple([z.number(), z.number(), z.number()]).optional(),
       },
       annotations: { readOnlyHint: false },
     },
-    async ({ prompt, photoBase64, targetMm, name, seed }) => {
-      const r = await jobs.startJob({ prompt, photoBase64, targetMm, name, seed });
+    async (args) => {
+      const r = await jobs.startJob(args);
       if (!r.ok) {
         return result({
           ok: false,
@@ -137,7 +145,7 @@ function buildMcp(cfg: ForgeConfig, jobs: JobManager): McpServer {
     'forge_job',
     {
       description:
-        'Check the status of a forge_generate job. When status is "done", returns the repaired preview mesh, bounding box, Saturn 3 print checks, and the STL file path written to AlienPC.',
+        'Check the status of a forge_generate job. When status is "done", returns the repaired preview mesh, bounding box, Saturn 3 print checks, quality metrics, and the STL file path written to AlienPC.',
       inputSchema: {
         jobId: z.string().min(1).max(80),
       },
@@ -196,8 +204,72 @@ function buildMcp(cfg: ForgeConfig, jobs: JobManager): McpServer {
         stlFilename: res.stlFilename,
         stlPath: res.stlPath,
         deliveredToAlienPc: res.deliveredToAlienPc,
+        rawGlbFilename: res.rawGlbFilename,
+        qualityMetrics: res.qualityMetrics,
         preview: res.preview,
       });
+    },
+  );
+
+  server.registerTool(
+    'forge_refine',
+    {
+      description:
+        'Fast 3-second Blender 4.3 refinement pass on the raw Hunyuan3D GLB on AlienPC. Re-runs OpenVDB voxel remeshing at higher grid resolution (up to 340), crisp smoothing, higher adaptive vertex budget (up to 60,000 verts / ~120,000 tris), and optional real-world aspect-ratio correction [1.0, widthRatio, heightRatio].',
+      inputSchema: {
+        rawGlbFilename: z.string().max(120).optional(),
+        name: z.string().max(80).optional(),
+        targetMm: z.number().min(10).max(218).optional(),
+        gridRes: z.number().int().min(200).max(360).optional(),
+        maxVerts: z.number().int().min(25000).max(62000).optional(),
+        smoothIterations: z.number().int().min(0).max(8).optional(),
+        smoothFactor: z.number().min(0.05).max(1.0).optional(),
+        aspectRatioTarget: z.tuple([z.number(), z.number(), z.number()]).optional(),
+      },
+      annotations: { readOnlyHint: false },
+    },
+    async (args) => {
+      try {
+        const res = await runBlenderRefineOnAlienPc({
+          comfyUrl: cfg.comfyUrl,
+          rawGlbFilename: args.rawGlbFilename,
+          name: args.name ?? 'refined-model',
+          targetMm: args.targetMm ?? 120,
+          gridRes: args.gridRes ?? 320,
+          maxVerts: args.maxVerts ?? 58000,
+          smoothIterations: args.smoothIterations ?? 1,
+          smoothFactor: args.smoothFactor ?? 0.25,
+          aspectRatioTarget: args.aspectRatioTarget,
+          localOutDir: cfg.localOutDir,
+          skipScp: cfg.skipScp,
+        });
+        return result({
+          ok: true,
+          status: 'done',
+          name: res.name,
+          targetMm: args.targetMm ?? 120,
+          bbox: res.bbox,
+          volumeMm3: res.volumeMm3,
+          volumeMl: res.volumeMl,
+          triangleCount: res.triangleCount,
+          manifold: res.manifold,
+          checks: res.checks,
+          worst: res.worst,
+          layers: res.layers,
+          stlFilename: res.stlFilename,
+          stlPath: res.stlPath,
+          deliveredToAlienPc: res.deliveredToAlienPc,
+          rawGlbFilename: res.rawGlbFilename,
+          qualityMetrics: res.qualityMetrics,
+          preview: res.preview,
+        });
+      } catch (e) {
+        return result({
+          ok: false,
+          status: 'error',
+          error: (e as Error).message,
+        });
+      }
     },
   );
 
@@ -239,6 +311,8 @@ function buildMcp(cfg: ForgeConfig, jobs: JobManager): McpServer {
           stlFilename: res.stlFilename,
           stlPath: res.stlPath,
           deliveredToAlienPc: res.deliveredToAlienPc,
+          rawGlbFilename: res.rawGlbFilename,
+          qualityMetrics: res.qualityMetrics,
           preview: res.preview,
         });
       } catch (e) {

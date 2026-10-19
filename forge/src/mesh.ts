@@ -862,7 +862,7 @@ export function repairAndPrepareMesh(
   {
     targetMm = 120,
     gridRes = 155,
-    maxPreviewBytes = 1_800_000,
+    maxPreviewBytes = 2_600_000,
   }: { targetMm?: number; gridRes?: number; maxPreviewBytes?: number } = {},
 ): PreparedMeshResult {
   const clampedTarget = Math.max(10, Math.min(218, Number.isFinite(targetMm) ? targetMm : 120));

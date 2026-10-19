@@ -10,7 +10,12 @@ export function createViewport(canvas, { onSelect = (_id) => {} } = {}) {
   if (typeof THREE === 'undefined') return null;
   let renderer;
   try {
-    renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+    renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: true,
+      alpha: true,
+      preserveDrawingBuffer: true,
+    });
   } catch {
     return null;
   }
@@ -188,9 +193,47 @@ export function createViewport(canvas, { onSelect = (_id) => {} } = {}) {
     }
     requestAnimationFrame(loop);
   }
+  async function captureFourViews(bbox) {
+    try {
+      const savedTheta = theta,
+        savedPhi = phi;
+      if (bbox) fit(bbox);
+      const out = document.createElement('canvas');
+      out.width = 640;
+      out.height = 640;
+      const ctx = out.getContext('2d');
+      if (!ctx) return null;
+      ctx.fillStyle = '#17181a';
+      ctx.fillRect(0, 0, 640, 640);
+      const angles = [
+        { t: -0.9, p: 1.05, x: 0, y: 0, label: '3/4 ISO' },
+        { t: -Math.PI / 2, p: Math.PI / 2 - 0.01, x: 320, y: 0, label: 'FRONT / SIDE' },
+        { t: 0, p: Math.PI / 2 - 0.01, x: 0, y: 320, label: 'PROFILE' },
+        { t: -Math.PI / 2, p: 0.01, x: 320, y: 320, label: 'TOP' },
+      ];
+      for (const a of angles) {
+        theta = a.t;
+        phi = a.p;
+        updateCamera();
+        renderer.render(scene, camera);
+        ctx.drawImage(canvas, a.x, a.y, 320, 320);
+        ctx.fillStyle = '#e0912a';
+        ctx.font = '12px sans-serif';
+        ctx.fillText(a.label, a.x + 8, a.y + 18);
+      }
+      theta = savedTheta;
+      phi = savedPhi;
+      updateCamera();
+      renderer.render(scene, camera);
+      const blob = await new Promise((res) => out.toBlob(res, 'image/jpeg', 0.85));
+      return blob ? new File([blob], 'mesh-4view.jpg', { type: 'image/jpeg' }) : null;
+    } catch {
+      return null;
+    }
+  }
   setTheme();
   resize();
   updateCamera();
   loop();
-  return { setItems, fit, view, resize, setTheme };
+  return { setItems, fit, view, resize, setTheme, captureFourViews };
 }

@@ -76,12 +76,24 @@ export function buildFluxWorkflow(promptText: string, outputPrefix: string, seed
   return wf;
 }
 
-export function buildHunyuanWorkflow(inputImageName: string, outputPrefix: string, seed = 731) {
+export function buildHunyuanWorkflow(
+  inputImageName: string,
+  outputPrefix: string,
+  seed = 731,
+  {
+    octreeResolution = 320,
+    steps = 30,
+    cfg = 5,
+  }: { octreeResolution?: number; steps?: number; cfg?: number } = {},
+) {
   const wf = JSON.parse(
     readFileSync(join(WORKFLOWS_DIR, 'hunyuan3d21_image_to_mesh.api.json'), 'utf8'),
   );
   wf['2'].inputs.image = inputImageName;
   wf['7'].inputs.seed = seed;
+  wf['7'].inputs.steps = Math.max(15, Math.min(60, Math.round(steps)));
+  wf['7'].inputs.cfg = Math.max(1, Math.min(10, cfg));
+  wf['8'].inputs.octree_resolution = Math.max(192, Math.min(512, Math.round(octreeResolution)));
   wf['10'].inputs.filename_prefix = `shapecast/${outputPrefix}`;
   wf['24'].inputs.filename_prefix = `shapecast/${outputPrefix}_cutout`;
   return wf;
@@ -227,14 +239,23 @@ export function deliverStlToAlienPc(
   }
 }
 
-export interface ForgePipelineOptions {
+export interface BlenderRemeshOptions {
+  gridRes?: number;
+  maxVerts?: number;
+  smoothIterations?: number;
+  smoothFactor?: number;
+  aspectRatioTarget?: [number, number, number];
+}
+
+export interface ForgePipelineOptions extends BlenderRemeshOptions {
   comfyUrl: string;
   prompt?: string;
   photoBase64?: string;
   targetMm?: number;
   name?: string;
   seed?: number;
-  gridRes?: number;
+  octreeResolution?: number;
+  steps?: number;
   localOutDir?: string;
   skipScp?: boolean;
   pollMs?: number;
@@ -247,6 +268,8 @@ export interface ForgePipelineResult extends PreparedMeshResult {
   stlPath: string;
   localCopyPath: string;
   deliveredToAlienPc: boolean;
+  rawGlbFilename?: string;
+  qualityMetrics?: Record<string, any>;
 }
 
 export function runBlenderPostProcessOnAlienPc(
@@ -256,20 +279,117 @@ export function runBlenderPostProcessOnAlienPc(
   targetMm: number,
   gridRes: number,
   sshHost = process.env.FORGE_ALIENPC_SSH ?? 'gaming-pc',
-): boolean {
+  extra: BlenderRemeshOptions = {},
+): { ok: boolean; summary?: any } {
   const inPath = `C:/Users/matth/ComfyUI/output/${subfolder ? `${subfolder}/` : ''}${inputFilename}`;
   const outPath = `C:/Users/matth/ComfyUI/output/shapecast/${outGlbFilename}`;
-  const cmd = `C:\\Blender\\blender-4.3.2-windows-x64\\blender.exe --background --python C:\\Blender\\blender_postprocess.py -- --input "${inPath}" --output-glb "${outPath}" --target-mm ${targetMm} --grid-res ${gridRes}`;
+  const maxVerts = extra.maxVerts ?? 48000;
+  const smoothIters = extra.smoothIterations ?? 3;
+  const smoothFactor = extra.smoothFactor ?? 0.4;
+  const aspectArg =
+    extra.aspectRatioTarget && extra.aspectRatioTarget.length === 3
+      ? ` --aspect-target ${extra.aspectRatioTarget.map((n) => Number(n).toFixed(4)).join(',')}`
+      : '';
+  const cmd = `C:\\Blender\\blender-4.3.2-windows-x64\\blender.exe --background --python C:\\Blender\\blender_postprocess.py -- --input "${inPath}" --output-glb "${outPath}" --target-mm ${targetMm} --grid-res ${gridRes} --max-verts ${maxVerts} --smooth-iters ${smoothIters} --smooth-factor ${smoothFactor}${aspectArg}`;
   try {
     const out = execFileSync(
       'ssh',
       ['-n', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', sshHost, cmd],
-      { timeout: 30_000, stdio: 'pipe', encoding: 'utf8' },
+      { timeout: 45_000, stdio: 'pipe', encoding: 'utf8' },
     );
-    return out.includes('BLENDER_POSTPROCESS_JSON:');
+    const marker = 'BLENDER_POSTPROCESS_JSON:';
+    const idx = out.indexOf(marker);
+    if (idx === -1) return { ok: false };
+    const line = out.slice(idx + marker.length).split(/\r?\n/)[0];
+    try {
+      return { ok: true, summary: JSON.parse(line) };
+    } catch {
+      return { ok: true };
+    }
   } catch {
-    return false;
+    return { ok: false };
   }
+}
+
+export async function runBlenderRefineOnAlienPc({
+  comfyUrl,
+  rawGlbFilename,
+  name = 'refined-model',
+  targetMm = 120,
+  gridRes = 320,
+  maxVerts = 58000,
+  smoothIterations = 1,
+  smoothFactor = 0.25,
+  aspectRatioTarget,
+  localOutDir,
+  skipScp = false,
+  sshHost = process.env.FORGE_ALIENPC_SSH ?? 'gaming-pc',
+}: {
+  comfyUrl: string;
+  rawGlbFilename?: string;
+  name?: string;
+  targetMm?: number;
+  localOutDir?: string;
+  skipScp?: boolean;
+  sshHost?: string;
+} & BlenderRemeshOptions): Promise<ForgePipelineResult> {
+  const label = (name?.trim() || 'refined-model').slice(0, 80);
+  const slug = slugify(label);
+  let targetRaw = rawGlbFilename?.trim() || '';
+  if (!targetRaw || /[^a-zA-Z0-9_.-]/.test(targetRaw)) {
+    const listOut = execFileSync(
+      'ssh',
+      [
+        '-n',
+        '-o',
+        'BatchMode=yes',
+        '-o',
+        'ConnectTimeout=10',
+        sshHost,
+        'dir /b /od C:\\Users\\matth\\ComfyUI\\output\\shapecast\\sc_*_00001_.glb',
+      ],
+      { timeout: 10_000, stdio: 'pipe', encoding: 'utf8' },
+    );
+    const lines = listOut
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter((s) => s.endsWith('.glb'));
+    if (lines.length === 0) {
+      throw new Error('No raw Hunyuan3D GLB found on AlienPC to refine');
+    }
+    targetRaw = lines[lines.length - 1];
+  }
+
+  const outGlbFilename = `${targetRaw.replace(/\.glb$/i, '')}_refined_${Date.now().toString(36)}.glb`;
+  const post = runBlenderPostProcessOnAlienPc(
+    targetRaw,
+    'shapecast',
+    outGlbFilename,
+    targetMm,
+    gridRes,
+    sshHost,
+    { maxVerts, smoothIterations, smoothFactor, aspectRatioTarget },
+  );
+  if (!post.ok) {
+    throw new Error(`Blender refinement failed on ${targetRaw}`);
+  }
+
+  const glbBytes = await fetchComfyView(comfyUrl, outGlbFilename, 'shapecast', 'output');
+  const rawTris = await parseGlbTriangles(glbBytes);
+  const prepared = repairAndPrepareMesh(rawTris, { targetMm, gridRes });
+  if (!prepared.manifold.ok) {
+    throw new Error(`Refined mesh failed manifold check: ${prepared.manifold.errors.join('; ')}`);
+  }
+  const stlFilename = `${dateStamp()}-${slug}.stl`;
+  const stlBuf = writeBinaryStl(prepared.tris, label);
+  const delivery = deliverStlToAlienPc(stlBuf, stlFilename, { localOutDir, skipScp, sshHost });
+  return {
+    ...prepared,
+    name: label,
+    ...delivery,
+    rawGlbFilename: targetRaw,
+    qualityMetrics: post.summary?.quality_metrics ?? undefined,
+  };
 }
 
 export async function runBlenderScriptOnAlienPc({
@@ -277,7 +397,7 @@ export async function runBlenderScriptOnAlienPc({
   pythonCode,
   name = 'blender-model',
   targetMm = 120,
-  gridRes = 125,
+  gridRes = 260,
   localOutDir,
   skipScp = false,
   sshHost = process.env.FORGE_ALIENPC_SSH ?? 'gaming-pc',
@@ -339,7 +459,7 @@ print('BLENDER_SCRIPT_OK')
 
   // Also run blender_postprocess on the exported GLB so it is voxel-remeshed & smoothed in Blender
   const postGlbFilename = `${runId}_post.glb`;
-  const postOk = runBlenderPostProcessOnAlienPc(
+  const post = runBlenderPostProcessOnAlienPc(
     outGlbFilename,
     'shapecast',
     postGlbFilename,
@@ -347,7 +467,7 @@ print('BLENDER_SCRIPT_OK')
     gridRes,
     sshHost,
   );
-  const finalGlbName = postOk ? postGlbFilename : outGlbFilename;
+  const finalGlbName = post.ok ? postGlbFilename : outGlbFilename;
   const glbBytes = await fetchComfyView(comfyUrl, finalGlbName, 'shapecast', 'output');
   const rawTris = await parseGlbTriangles(glbBytes);
   const prepared = repairAndPrepareMesh(rawTris, { targetMm, gridRes });
@@ -361,6 +481,8 @@ print('BLENDER_SCRIPT_OK')
     ...prepared,
     name: label,
     ...delivery,
+    rawGlbFilename: outGlbFilename,
+    qualityMetrics: post.summary?.quality_metrics ?? undefined,
   };
 }
 
@@ -372,7 +494,13 @@ export async function runForgePipeline(opts: ForgePipelineOptions): Promise<Forg
     targetMm = 120,
     name,
     seed = 731,
-    gridRes = 128,
+    gridRes = 260,
+    maxVerts = 48000,
+    smoothIterations = 3,
+    smoothFactor = 0.4,
+    aspectRatioTarget,
+    octreeResolution = 320,
+    steps = 30,
     localOutDir,
     skipScp = false,
     pollMs = 1500,
@@ -414,23 +542,27 @@ export async function runForgePipeline(opts: ForgePipelineOptions): Promise<Forg
 
   // 3. Hunyuan3D 2.1 + BiRefNet image-to-mesh
   onStage?.('mesh_generation');
-  const hyWf = buildHunyuanWorkflow(inputImageName, runId, seed);
+  const hyWf = buildHunyuanWorkflow(inputImageName, runId, seed, { octreeResolution, steps });
   const hyOut = await runComfyWorkflow(comfyUrl, hyWf, { pollMs });
   const glbFile = extractSavedFile(hyOut['10'], `${runId}_00001_.glb`);
 
   // 4. Blender 4.3 headless post-process (OpenVDB Voxel Remesh + Smooth) + watertight manifold repair & STL delivery
   onStage?.('repair_and_export');
   let glbBytes: Uint8Array;
+  let qualityMetrics: Record<string, any> | undefined;
   if (!skipScp) {
     const blenderGlbName = `${runId}_blender.glb`;
-    const blenderOk = runBlenderPostProcessOnAlienPc(
+    const post = runBlenderPostProcessOnAlienPc(
       glbFile.filename,
       glbFile.subfolder,
       blenderGlbName,
       targetMm,
       gridRes,
+      undefined,
+      { maxVerts, smoothIterations, smoothFactor, aspectRatioTarget },
     );
-    if (blenderOk) {
+    qualityMetrics = post.summary?.quality_metrics ?? undefined;
+    if (post.ok) {
       glbBytes = await fetchComfyView(comfyUrl, blenderGlbName, 'shapecast', 'output');
     } else {
       glbBytes = await fetchComfyView(comfyUrl, glbFile.filename, glbFile.subfolder, 'output');
@@ -453,5 +585,7 @@ export async function runForgePipeline(opts: ForgePipelineOptions): Promise<Forg
     ...prepared,
     name: label,
     ...delivery,
+    rawGlbFilename: glbFile.filename,
+    qualityMetrics,
   };
 }

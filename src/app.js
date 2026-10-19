@@ -2,7 +2,7 @@ import { validatePartList } from './schema.js';
 import { runPrintChecks, runMeshPrintChecks } from './printcheck.js';
 import { writeBinaryStl, concatTriangles } from './stl.js';
 import { createRequestTracker, createSaveController } from './lifecycle.js';
-import { builderPrompt, editorPrompt, blenderPrompt } from './prompts.js';
+import { builderPrompt, editorPrompt, blenderPrompt, criticPrompt } from './prompts.js';
 import { slugify, readmeText, truncateRequest } from './exportbundle.js';
 import {
   FIELDS,
@@ -22,6 +22,7 @@ import {
 import { createViewport } from './viewport.js';
 
 const FORGE_SERVER = 'ShapeCast Forge';
+const QUALITY_THRESHOLD = 85;
 const $ = (id) => /** @type {any} */ (document.getElementById(id));
 const caps = { sample: null, downloads: null, db: null, assets: null, user: null, mcp: null };
 let imageLimits = null,
@@ -86,8 +87,30 @@ function setBusy(on, text) {
       : state.mode === 'blender'
         ? 'Build in Blender'
         : 'Build model';
+  const rBtn = $('refineBtn');
+  if (rBtn) rBtn.disabled = on || !(caps.mcp && caps.sample);
   $('sendBtn').disabled = on || !caps.sample;
   $('stopBtn').classList.toggle('hidden', !on);
+}
+function setMode(nextMode) {
+  state.mode = nextMode === 'blocks' ? 'blocks' : nextMode === 'blender' ? 'blender' : 'forge';
+  const modeSel = /** @type {HTMLSelectElement | null} */ ($('modeSelect'));
+  if (modeSel) modeSel.value = state.mode;
+  $('modeBtnForge')?.classList.toggle('primary', state.mode === 'forge');
+  $('modeBtnBlender')?.classList.toggle('primary', state.mode === 'blender');
+  $('modeBtnBlocks')?.classList.toggle('primary', state.mode === 'blocks');
+  if (state.mode === 'blocks' && state.forgeMesh) {
+    state.forgeMesh = null;
+    render();
+  }
+  if (state.mode === 'forge') {
+    note('Photos are shrunk on-device (<= 700 KB JPEG) and sent directly to Mesh Forge.');
+  } else if (state.mode === 'blender') {
+    note('Claude writes a Blender 4.3 bpy script and runs it headless on AlienPC.');
+  } else if (!imageLimits) {
+    note('Photos cannot be sent to Claude from this artifact yet; the brief alone is used.');
+  }
+  setBusy(Boolean(state.inference), $('status').textContent);
 }
 function addChat(role, text) {
   const d = document.createElement('div');
@@ -390,7 +413,7 @@ function addPhotos(files) {
 }
 
 // ---------- Mesh Forge (Hunyuan3D via MCP) ----------
-const UI_VERSION = '2.3';
+const UI_VERSION = '2.4';
 const STAGE_LABELS = {
   queued: 'Queued on AlienPC...',
   reference_image: '1/3 Generating reference image (Flux)...',
@@ -463,6 +486,249 @@ async function refreshForgeStatus() {
   }
 }
 
+async function pollForgeJobUntilDone(jobId, controller) {
+  while (!controller.signal.aborted) {
+    await new Promise((r) => setTimeout(r, 2500));
+    if (controller.signal.aborted) return null;
+    const pollRes = await caps.mcp.callTool(FORGE_SERVER, 'forge_job', { jobId }, { cache: false });
+    const job = pollRes?.payload;
+    $('rawReply').textContent = JSON.stringify(
+      {
+        ...job,
+        preview: job?.preview
+          ? { ...job.preview, vertsBase64: '<omitted>', indicesBase64: '<omitted>' }
+          : undefined,
+      },
+      null,
+      2,
+    );
+    if (!job || job.status === 'error' || job.status === 'not_found') {
+      showError(job?.error || 'Mesh Forge generation failed.');
+      await refreshForgeStatus();
+      return null;
+    }
+    if (job.status === 'running') {
+      const label = STAGE_LABELS[job.stage] || `Running (${job.stage})...`;
+      setBusy(true, `${label} (${job.elapsedSec ?? 0}s)`);
+      continue;
+    }
+    if (job.status === 'done') {
+      const tris = unpackForgePreview(job.preview);
+      state.forgeMesh = { ...job, tris };
+      if (job.name) state.project.name = String(job.name).slice(0, META.name);
+      render();
+      viewport?.fit(job.bbox);
+      return job;
+    }
+  }
+  return null;
+}
+
+async function runCriticStep({
+  iteration = 1,
+  maxIterations = 2,
+  userFeedback = '',
+  photoBase64,
+  targetMm = 120,
+  name = 'forge-model',
+  controller,
+}) {
+  if (!caps.sample || !caps.mcp) return;
+  const cStatus = $('criticStatus');
+  for (let pass = iteration; pass <= maxIterations; pass++) {
+    if (controller.signal.aborted) return;
+    setBusy(true, `Critic Agent reviewing 3D mesh (pass ${pass}/${maxIterations})...`);
+
+    const fm = state.forgeMesh;
+    let criticImages = [];
+    let hasPhotos = false;
+    let hasRenderView = false;
+    if (imageLimits) {
+      const filesToSend = [];
+      const refFile = state.project.photos.map((p) => p.file).find(Boolean);
+      if (refFile) {
+        filesToSend.push(refFile);
+        hasPhotos = true;
+      }
+      if (viewport?.captureFourViews && fm?.bbox) {
+        const viewFile = await viewport.captureFourViews(fm.bbox);
+        if (viewFile) {
+          filesToSend.push(viewFile);
+          hasRenderView = true;
+        }
+      }
+      if (filesToSend.length) {
+        criticImages = prepareImages(filesToSend, imageLimits).images;
+      }
+    }
+
+    const prompt = criticPrompt({
+      brief: state.project.brief,
+      scaleRef: state.project.scaleRef,
+      userFeedback: pass === iteration ? userFeedback : '',
+      bbox: fm?.bbox,
+      triangleCount: fm?.triangleCount,
+      volumeMl: fm?.volumeMl,
+      qualityMetrics: fm?.qualityMetrics,
+      iteration: pass,
+      threshold: QUALITY_THRESHOLD,
+      hasPhotos,
+      hasRenderView,
+    });
+
+    const review = await caps.sample.json(prompt, {
+      signal: controller.signal,
+      images: criticImages.length ? criticImages : undefined,
+      modelTier: 'complex',
+      cache: false,
+      onText: ({ text }) => {
+        $('rawReply').textContent = text;
+      },
+    });
+    if (!review || typeof review.score !== 'number') return;
+
+    const score = Math.round(review.score);
+    const issues = Array.isArray(review.missingOrOutOfPlace)
+      ? review.missingOrOutOfPlace.slice(0, 3).join('; ')
+      : '';
+    if (cStatus) {
+      cStatus.textContent = `Critic Score: ${score}/100 (target >= ${QUALITY_THRESHOLD}) — ${review.critique || ''}`;
+      cStatus.style.color = score >= QUALITY_THRESHOLD ? 'var(--green)' : 'var(--amber)';
+    }
+    addChat(
+      'claude',
+      `Critic (Pass ${pass}): ${score}/100 — ${review.critique || ''}${issues ? ` | Focus: ${issues}` : ''}`,
+    );
+
+    if ((score >= QUALITY_THRESHOLD && !userFeedback) || review.action === 'accept') {
+      return;
+    }
+
+    const rp = review.remeshParams || {};
+    const aspectTarget =
+      Array.isArray(rp.aspectRatioTarget) && rp.aspectRatioTarget.length === 3
+        ? rp.aspectRatioTarget
+        : undefined;
+
+    if (review.action === 'regenerate_mesh') {
+      setBusy(
+        true,
+        `Refining via Hunyuan3D HD (octree ${review.octreeResolution || 384}, pass ${pass})...`,
+      );
+      const startRes = await caps.mcp.callTool(
+        FORGE_SERVER,
+        'forge_generate',
+        {
+          prompt: review.refinedPrompt || state.project.brief || undefined,
+          photoBase64,
+          targetMm,
+          name,
+          seed: 731 + pass * 17,
+          octreeResolution: review.octreeResolution || 384,
+          steps: review.steps || 40,
+          gridRes: rp.gridRes || 320,
+          maxVerts: rp.maxVerts || 58000,
+          smoothIterations: rp.smoothIterations ?? 1,
+          smoothFactor: rp.smoothFactor ?? 0.22,
+          aspectRatioTarget: aspectTarget,
+        },
+        { cache: false },
+      );
+      if (!startRes?.payload?.ok) {
+        showError(startRes?.payload?.error || 'Could not start refinement pass.');
+        return;
+      }
+      const nextJob = await pollForgeJobUntilDone(startRes.payload.jobId, controller);
+      if (!nextJob) return;
+      addChat(
+        'claude',
+        `HD Regenerated: ${nextJob.triangleCount.toLocaleString()} tris (${nextJob.bbox.size.map((x) => x.toFixed(1)).join(' x ')} mm).`,
+      );
+    } else {
+      // Fast 3-second Blender 4.3 high-resolution crisp remesh + proportion correction on raw GLB
+      setBusy(
+        true,
+        `Refining in Blender 4.3 (grid ${rp.gridRes || 320}, crisp creases & true proportions)...`,
+      );
+      const refRes = await caps.mcp.callTool(
+        FORGE_SERVER,
+        'forge_refine',
+        {
+          rawGlbFilename: fm?.rawGlbFilename || undefined,
+          name,
+          targetMm,
+          gridRes: rp.gridRes || 320,
+          maxVerts: rp.maxVerts || 58000,
+          smoothIterations: rp.smoothIterations ?? 1,
+          smoothFactor: rp.smoothFactor ?? 0.22,
+          aspectRatioTarget: aspectTarget,
+        },
+        { cache: false },
+      );
+      const out = refRes?.payload;
+      if (!out?.ok) {
+        showError(out?.error || 'Blender refinement pass failed.');
+        return;
+      }
+      const tris = unpackForgePreview(out.preview);
+      state.forgeMesh = { ...out, tris };
+      render();
+      viewport?.fit(out.bbox);
+      addChat(
+        'claude',
+        `Refined mesh: ${out.triangleCount.toLocaleString()} crisp triangles (${out.bbox.size.map((x) => x.toFixed(1)).join(' x ')} mm). Written to AlienPC: ${out.stlPath}`,
+      );
+    }
+    userFeedback = '';
+  }
+}
+
+async function runCriticRefineLoop(userFeedback = '') {
+  if (!caps.mcp || !caps.sample || state.inference) return;
+  metaChange();
+  const controller = new AbortController();
+  const token = tracker.token();
+  state.inference = { controller, token };
+  showError('');
+
+  const brief = state.project.brief.trim();
+  const targetMm = parseScaleRefMm(state.project.scaleRef, 120);
+  const customName =
+    state.project.name && state.project.name !== SAMPLE_LIST.name ? state.project.name : '';
+  const name = customName || brief.slice(0, 60) || 'refined-model';
+
+  try {
+    if (userFeedback) {
+      addChat('user', `Refine mesh: ${userFeedback}`);
+    } else {
+      addChat('user', 'Run Quality Critic & Refinement Agent on current mesh');
+    }
+    let photoBase64;
+    const photoBlob = await resolveFirstPhotoBlob();
+    if (photoBlob) {
+      const shrunk = await shrinkPhotoForForge(photoBlob);
+      photoBase64 = shrunk.base64;
+    }
+    await runCriticStep({
+      iteration: 1,
+      maxIterations: 2,
+      userFeedback,
+      photoBase64,
+      targetMm,
+      name,
+      controller,
+    });
+    await refreshForgeStatus();
+  } catch (e) {
+    if (!controller.signal.aborted) {
+      showError(`Critic refinement error: ${e?.message || e?.code || 'failed'}`);
+    }
+  } finally {
+    state.inference = null;
+    setBusy(false, '');
+  }
+}
+
 async function runForgeGenerate() {
   if (!caps.mcp || state.inference) return;
   metaChange();
@@ -522,51 +788,26 @@ async function runForgeGenerate() {
       return;
     }
 
-    const jobId = start.jobId;
-    while (!controller.signal.aborted) {
-      await new Promise((r) => setTimeout(r, 2500));
-      if (controller.signal.aborted) break;
-      const pollRes = await caps.mcp.callTool(
-        FORGE_SERVER,
-        'forge_job',
-        { jobId },
-        { cache: false },
-      );
-      const job = pollRes?.payload;
-      $('rawReply').textContent = JSON.stringify(
-        {
-          ...job,
-          preview: job?.preview
-            ? { ...job.preview, vertsBase64: '<omitted>', indicesBase64: '<omitted>' }
-            : undefined,
-        },
-        null,
-        2,
-      );
-      if (!job || job.status === 'error' || job.status === 'not_found') {
-        showError(job?.error || 'Mesh Forge generation failed.');
-        await refreshForgeStatus();
-        return;
-      }
-      if (job.status === 'running') {
-        const label = STAGE_LABELS[job.stage] || `Running (${job.stage})...`;
-        setBusy(true, `${label} (${job.elapsedSec ?? 0}s)`);
-        continue;
-      }
-      if (job.status === 'done') {
-        const tris = unpackForgePreview(job.preview);
-        state.forgeMesh = { ...job, tris };
-        if (job.name) state.project.name = String(job.name).slice(0, META.name);
-        render();
-        viewport?.fit(job.bbox);
-        addChat(
-          'claude',
-          `Mesh ready: ${job.triangleCount.toLocaleString()} watertight triangles (${job.bbox.size.map((x) => x.toFixed(1)).join(' x ')} mm). Written to AlienPC: ${job.stlPath}`,
-        );
-        await refreshForgeStatus();
-        return;
-      }
+    const job = await pollForgeJobUntilDone(start.jobId, controller);
+    if (!job) return;
+    addChat(
+      'claude',
+      `Mesh ready: ${job.triangleCount.toLocaleString()} watertight triangles (${job.bbox.size.map((x) => x.toFixed(1)).join(' x ')} mm). Written to AlienPC: ${job.stlPath}`,
+    );
+
+    const autoRefine = /** @type {HTMLInputElement | null} */ ($('autoRefineCheck'))?.checked;
+    if (autoRefine && caps.sample && !controller.signal.aborted) {
+      await runCriticStep({
+        iteration: 1,
+        maxIterations: 2,
+        userFeedback: '',
+        photoBase64,
+        targetMm,
+        name,
+        controller,
+      });
     }
+    await refreshForgeStatus();
   } catch (e) {
     if (!controller.signal.aborted) {
       showError(`Mesh Forge error: ${e?.message || e?.code || 'connection failed'}`);
@@ -979,23 +1220,11 @@ async function doSwitchSave() {
 async function init() {
   const modeSel = /** @type {HTMLSelectElement} */ ($('modeSelect'));
   if (modeSel) {
-    modeSel.addEventListener('change', () => {
-      state.mode =
-        modeSel.value === 'blocks' ? 'blocks' : modeSel.value === 'blender' ? 'blender' : 'forge';
-      if (state.mode === 'blocks' && state.forgeMesh) {
-        state.forgeMesh = null;
-        render();
-      }
-      if (state.mode === 'forge') {
-        note('Photos are shrunk on-device (<= 700 KB JPEG) and sent directly to Mesh Forge.');
-      } else if (state.mode === 'blender') {
-        note('Claude writes a Blender 4.3 bpy script and runs it headless on AlienPC.');
-      } else if (!imageLimits) {
-        note('Photos cannot be sent to Claude from this artifact yet; the brief alone is used.');
-      }
-      setBusy(Boolean(state.inference), $('status').textContent);
-    });
+    modeSel.addEventListener('change', () => setMode(modeSel.value));
   }
+  $('modeBtnForge')?.addEventListener('click', () => setMode('forge'));
+  $('modeBtnBlender')?.addEventListener('click', () => setMode('blender'));
+  $('modeBtnBlocks')?.addEventListener('click', () => setMode('blocks'));
   $('photoInput').addEventListener('change', (e) => {
     const input = /** @type {HTMLInputElement} */ (e.target);
     addPhotos([...input.files]);
@@ -1021,12 +1250,17 @@ async function init() {
         ? runBlenderGenerate()
         : runInference('build'),
   );
+  $('refineBtn')?.addEventListener('click', () => runCriticRefineLoop(''));
   $('sendBtn').addEventListener('click', () => {
     const box = /** @type {HTMLInputElement} */ ($('chatInput'));
     const t = box.value.trim();
     if (!t) return;
     box.value = '';
-    runInference('edit', t);
+    if (state.forgeMesh || state.mode === 'forge') {
+      runCriticRefineLoop(t);
+    } else {
+      runInference('edit', t);
+    }
   });
   $('chatInput').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') $('sendBtn').click();

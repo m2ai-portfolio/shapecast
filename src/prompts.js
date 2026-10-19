@@ -80,3 +80,66 @@ Return ONLY a JSON object with this schema:
   "pythonCode": string (valid Blender 4.3 Python script using bpy/bmesh/mathutils)
 }`;
 }
+
+export function criticPrompt({
+  brief,
+  scaleRef,
+  userFeedback,
+  bbox,
+  triangleCount,
+  volumeMl,
+  qualityMetrics,
+  iteration = 1,
+  threshold = 85,
+  hasPhotos = false,
+  hasRenderView = false,
+}) {
+  const sizeStr = bbox?.size ? bbox.size.map((x) => Number(x).toFixed(2)).join(' x ') : 'unknown';
+  const sx = bbox?.size?.[0] || 120,
+    sy = bbox?.size?.[1] || 60,
+    sz = bbox?.size?.[2] || 40;
+  const majorH = Math.max(sx, sy, 1e-6);
+  const minorH = Math.min(sx, sy);
+  const currentAspect = [1.0, +(minorH / majorH).toFixed(3), +(sz / majorH).toFixed(3)];
+  return `You are a 3D Mesh Quality Critic & Refinement Agent inspecting a generated 3D print model for an Elegoo Saturn 3 resin printer.
+Compare the current 3D mesh output against the user's reference brief/photo and determine what is missing, out of place, distorted in proportion, or lacking surface definition.
+
+Reference Brief: ${brief && brief.trim() ? brief.trim() : '(from uploaded reference photo)'}
+Scale Reference: ${scaleRef && scaleRef.trim() ? scaleRef.trim() : '120 mm longest side'}
+${userFeedback ? `Specific User Refinement Request: ${userFeedback}\n` : ''}Visual Inputs Attached: ${hasPhotos ? 'Reference photo included. ' : ''}${hasRenderView ? '4-view 3D viewport render included.' : 'Using 3D geometric telemetry.'}
+
+Current 3D Mesh Telemetry (Iteration ${iteration}):
+- Bounding box (mm): ${sizeStr}
+- Normalized aspect ratio [length, width/length, height/length]: ${JSON.stringify(currentAspect)}
+- Triangle count: ${triangleCount ?? 0}
+- Volume: ${volumeMl ?? 0} mL
+- Blender 3D Quality Metrics: ${JSON.stringify(qualityMetrics ?? {})}
+- Quality threshold to pass: ${threshold} / 100
+
+Evaluation Guidelines:
+1. Check real-world proportions: Single-view 3D generators often inflate the width/depth by 8-15% (for example, a real C8 Corvette is 4630 x 1934 x 1234 mm -> aspect ratio [1.0, 0.418, 0.267]). Always compute the true real-world [1.0, width/length, height/length] ratio for the subject in "aspectRatioTarget".
+2. Check surface & crease definition: If crease_edge_pct < 11 or triangleCount < 95000 on a detailed hard-surface/mechanical/vehicle model, or if smoothing softened crisp intakes/spokes/panel lines, recommend "refine_remesh" with higher gridRes (320-340), maxVerts (58000), and crisp smoothing (smoothIterations: 1, smoothFactor: 0.22).
+3. Choose "action":
+   - "accept": if score >= ${threshold} and no user feedback requests further changes.
+   - "refine_remesh": (FAST 3-second Blender pass on raw mesh) if the core 3D shape is present, or on Iteration 1 when proportions (aspectRatioTarget) and crisp hard-surface crease definition (gridRes 320, smoothIterations 1, maxVerts 58000) will elevate the model above threshold.
+   - "regenerate_mesh": (90-second ComfyUI Hunyuan3D + Flux pass) ONLY if major structural geometry is completely missing or wrong, or if the user explicitly asked for a different design/pose. Provide a detailed "refinedPrompt" that calls out every missing feature, deep recesses, sharp edges, and clean 3/4 orthographic-style framing.
+
+Return ONLY a JSON object matching this exact schema:
+{
+  "score": integer (0 to 100),
+  "meetsThreshold": boolean,
+  "critique": string (concise 1-2 sentence assessment of current mesh vs reference),
+  "missingOrOutOfPlace": [ string (up to 4 specific items that are missing, out of proportion, or need sharper definition) ],
+  "action": "accept" | "refine_remesh" | "regenerate_mesh",
+  "refinedPrompt": string (enriched prompt emphasizing missing details and crisp edges),
+  "remeshParams": {
+    "gridRes": integer (260 to 340, use 320 for high-detail refinement),
+    "maxVerts": integer (45000 to 60000, use 58000 for high-detail refinement),
+    "smoothIterations": integer (0 to 4, use 1 for crisp hard-surface or 2 for organic),
+    "smoothFactor": number (0.15 to 0.5, use 0.22 for crisp creases),
+    "aspectRatioTarget": [1.0, number (0.2 to 1.0), number (0.15 to 1.2)]
+  },
+  "octreeResolution": integer (320 to 384),
+  "steps": integer (30 to 45)
+}`;
+}

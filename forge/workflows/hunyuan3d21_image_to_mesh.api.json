@@ -59,8 +59,8 @@
     "inputs": {
       "samples": ["7", 0],
       "vae": ["1", 2],
-      "num_chunks": 8000,
-      "octree_resolution": 256
+      "num_chunks": 12000,
+      "octree_resolution": 320
     }
   },
   "9": {
@@ -107,7 +107,7 @@
       "source": ["2", 0],
       "x": 0,
       "y": 0,
-      "resize_source": false,
+      "resize_source": true,
       "mask": ["21", 0]
     }
   },

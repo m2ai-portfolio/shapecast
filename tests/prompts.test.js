@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { builderPrompt, editorPrompt } from '../src/prompts.js';
+import { builderPrompt, editorPrompt, criticPrompt } from '../src/prompts.js';
 import { slugify, readmeText, truncateRequest } from '../src/exportbundle.js';
 import { EXAMPLE_LIST } from '../src/schema.js';
 
@@ -33,6 +33,22 @@ describe('prompts', () => {
     expect(p).toContain('"id":"base"');
     expect(p).toContain('make the slot 2 mm wider');
     expect(p).toContain('complete replacement');
+  });
+  it('critic prompt embeds telemetry, aspect ratio, and threshold', () => {
+    const p = criticPrompt({
+      brief: '2022 Chevrolet Corvette C8',
+      scaleRef: '120 mm longest side',
+      bbox: { size: [120, 55.4, 33.7] },
+      triangleCount: 90062,
+      volumeMl: 108.2,
+      qualityMetrics: { crease_edge_pct: 9.2, symmetry_score: 98.5 },
+      iteration: 1,
+      threshold: 85,
+    });
+    expect(p).toContain('2022 Chevrolet Corvette C8');
+    expect(p).toContain('120.00 x 55.40 x 33.70');
+    expect(p).toContain('refine_remesh');
+    expect(p).toContain('aspectRatioTarget');
   });
 });
 

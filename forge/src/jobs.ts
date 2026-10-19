@@ -50,6 +50,13 @@ export function createJobManager(opts: JobManagerOptions) {
     targetMm?: number;
     name?: string;
     seed?: number;
+    octreeResolution?: number;
+    steps?: number;
+    gridRes?: number;
+    maxVerts?: number;
+    smoothIterations?: number;
+    smoothFactor?: number;
+    aspectRatioTarget?: [number, number, number];
   }): Promise<
     | { ok: true; job: ForgeJobState }
     | { ok: false; reason: string; alienpc: 'busy' | 'unavailable' | 'invalid' }
@@ -123,7 +130,13 @@ export function createJobManager(opts: JobManagerOptions) {
           targetMm,
           name: label,
           seed: input.seed ?? 731,
-          gridRes: opts.gridRes ?? 115,
+          octreeResolution: input.octreeResolution ?? 320,
+          steps: input.steps ?? 30,
+          gridRes: input.gridRes ?? opts.gridRes ?? 260,
+          maxVerts: input.maxVerts ?? 48000,
+          smoothIterations: input.smoothIterations ?? 3,
+          smoothFactor: input.smoothFactor ?? 0.4,
+          aspectRatioTarget: input.aspectRatioTarget,
           localOutDir: opts.localOutDir,
           skipScp: opts.skipScp,
           onStage: (stage) => {

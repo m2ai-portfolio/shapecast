@@ -417,7 +417,15 @@
 />
 <header>
   <div>
-    <h1>ShapeCast</h1>
+    <div class="row" style="gap: 8px; align-items: baseline">
+      <h1>ShapeCast</h1>
+      <span
+        id="versionBadge"
+        class="small num"
+        style="padding: 1px 6px; border: 1px solid var(--line); border-radius: 4px"
+        >UI v2.3</span
+      >
+    </div>
     <div class="sub">Photo, sketch or prompt to a Saturn 3 resin print</div>
   </div>
   <div class="row">
@@ -2775,15 +2783,47 @@ function addPhotos(files) {
 }
 
 // ---------- Mesh Forge (Hunyuan3D via MCP) ----------
+const UI_VERSION = '2.3';
 const STAGE_LABELS = {
   queued: 'Queued on AlienPC...',
   reference_image: '1/3 Generating reference image (Flux)...',
   mesh_generation: '2/3 Sculpting 3D mesh (Hunyuan3D 2.1)...',
-  repair_and_export: '3/3 Repairing manifold & writing STL...',
+  repair_and_export: '3/3 Blender 4.3 remesh & writing STL...',
 };
+
+async function resolveFirstPhotoBlob() {
+  const first = state.project.photos[0];
+  if (!first) return null;
+  if (first.file) return first.file;
+  const src = first.url || (first.assetId ? '/_blob/' + first.assetId : '');
+  if (src) {
+    try {
+      const r = await fetch(src);
+      if (r.ok) return await r.blob();
+    } catch {
+      /* fallback to rendered img element below */
+    }
+  }
+  const imgEl = /** @type {HTMLImageElement | null} */ (
+    document.querySelector('#thumbs .thumb img')
+  );
+  if (imgEl && imgEl.complete && imgEl.naturalWidth > 0) {
+    const c = document.createElement('canvas');
+    c.width = imgEl.naturalWidth;
+    c.height = imgEl.naturalHeight;
+    const ctx = c.getContext('2d');
+    if (ctx) {
+      ctx.drawImage(imgEl, 0, 0);
+      const blob = await new Promise((res) => c.toBlob(res, 'image/jpeg', 0.92));
+      if (blob) return blob;
+    }
+  }
+  return null;
+}
 
 async function refreshForgeStatus() {
   const badge = $('forgeBadge');
+  const vBadge = $('versionBadge');
   if (!badge) return;
   if (!caps.mcp) {
     badge.textContent = 'MCP unavailable';
@@ -2793,6 +2833,9 @@ async function refreshForgeStatus() {
   try {
     const r = await caps.mcp.callTool(FORGE_SERVER, 'forge_status', {}, { cache: false });
     const st = r?.payload;
+    if (vBadge && st?.version) {
+      vBadge.textContent = `UI v${UI_VERSION} • Forge v${st.version}${st.blender ? ` (Blender ${st.blender})` : ''}`;
+    }
     if (st?.alienpc === 'available') {
       badge.textContent = 'AlienPC ready';
       badge.style.color = 'var(--green)';
@@ -2822,8 +2865,8 @@ async function runForgeGenerate() {
   showError('');
 
   const brief = state.project.brief.trim();
-  const photoFile = state.project.photos.map((p) => p.file).find(Boolean) ?? null;
-  if (!brief && !photoFile) {
+  const photoBlob = await resolveFirstPhotoBlob();
+  if (!brief && !photoBlob) {
     showError('Nothing to generate: write a brief or attach a photo.');
     state.inference = null;
     setBusy(false, '');
@@ -2833,17 +2876,17 @@ async function runForgeGenerate() {
   const targetMm = parseScaleRefMm(state.project.scaleRef, 120);
   const customName =
     state.project.name && state.project.name !== SAMPLE_LIST.name ? state.project.name : '';
-  const name =
-    customName ||
-    brief.slice(0, 60) ||
-    (photoFile?.name ? photoFile.name.replace(/\.\w+$/, '') : '') ||
-    'forge-model';
+  const photoName =
+    photoBlob && 'name' in photoBlob && typeof photoBlob.name === 'string'
+      ? photoBlob.name.replace(/\.\w+$/, '')
+      : '';
+  const name = customName || brief.slice(0, 60) || photoName || 'forge-model';
 
   try {
     let photoBase64;
-    if (photoFile) {
+    if (photoBlob) {
       setBusy(true, 'Preparing photo (shrinking <= 700 KB)...');
-      const shrunk = await shrinkPhotoForForge(photoFile);
+      const shrunk = await shrinkPhotoForForge(photoBlob);
       photoBase64 = shrunk.base64;
       note(`Sending photo to Mesh Forge (${Math.round(shrunk.blob.size / 1024)} KB JPEG).`);
     }
@@ -2851,7 +2894,7 @@ async function runForgeGenerate() {
     setBusy(true, 'Contacting ShapeCast Forge on AlienPC...');
     addChat(
       'user',
-      `Forge mesh (${targetMm} mm): ${brief || '(from photo)'}${photoFile ? ' [+photo]' : ''}`,
+      `Forge mesh (${targetMm} mm): ${brief || '(from photo)'}${photoBlob ? ' [+photo]' : ''}`,
     );
 
     const startRes = await caps.mcp.callTool(

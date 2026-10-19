@@ -1,11 +1,13 @@
 """
-Headless Blender 4.x post-processor for ShapeCast Forge on AlienPC.
-Usage:
-  blender.exe --background --python blender_postprocess.py -- \
-    --input C:/Users/matth/ComfyUI/output/shapecast/in.glb \
-    --output-glb C:/Users/matth/ComfyUI/output/shapecast/out_blender.glb \
-    --output-stl C:/Users/matth/Documents/ShapeCast/out.stl \
-    --target-mm 120
+Headless Blender 4.x high-resolution post-processor for ShapeCast Forge on AlienPC.
+Pipeline:
+  1. Import Hunyuan3D GLB (or procedural scene) and join meshes.
+  2. Scale longest horizontal dimension (X/Y) to target_mm, center XY, ground Z=0.
+  3. High-resolution OpenVDB Voxel Remesh (grid_res=260, ~0.45 mm voxels) to make watertight & union parts.
+  4. Separate loose shells and keep only the main solid body.
+  5. Smooth at high resolution (4 iterations) to remove any voxel stepping while preserving sharp features.
+  6. Adaptive Decimate (Collapse) to ~45,000 vertices (~90,000 triangles) so flat regions use large triangles
+     and curved details/spokes/creases keep dense triangles, while staying under the 65,535 Uint16 vertex ceiling.
 """
 import sys
 import os
@@ -26,7 +28,8 @@ def parse_args():
         "output_glb": "",
         "output_stl": "",
         "target_mm": 120.0,
-        "grid_res": 150,
+        "grid_res": 260,
+        "max_verts": 45000,
     }
     i = 0
     while i < len(argv):
@@ -46,6 +49,9 @@ def parse_args():
         elif a == "--grid-res" and i + 1 < len(argv):
             args["grid_res"] = int(argv[i + 1])
             i += 2
+        elif a == "--max-verts" and i + 1 < len(argv):
+            args["max_verts"] = int(argv[i + 1])
+            i += 2
         else:
             i += 1
     return args
@@ -57,6 +63,45 @@ def get_world_bbox(obj):
     ys = [c.y for c in corners]
     zs = [c.z for c in corners]
     return (min(xs), min(ys), min(zs)), (max(xs), max(ys), max(zs))
+
+
+def clean_non_manifold_bmesh(obj):
+    """Ensure the mesh is strictly 2-manifold (no boundary edges, wire edges, or pinched vertices)."""
+    for _ in range(4):
+        bm = bmesh.new()
+        bm.from_mesh(obj.data)
+        bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-4)
+        bmesh.ops.dissolve_degenerate(bm, dist=1e-4, edges=bm.edges)
+
+        # Delete loose verts/edges/faces
+        loose_verts = [v for v in bm.verts if not v.link_faces]
+        if loose_verts:
+            bmesh.ops.delete(bm, geom=loose_verts, context="VERTS")
+
+        # Check if any non-manifold edges or verts exist
+        non_manifold_verts = [v for v in bm.verts if not v.is_manifold]
+        non_manifold_edges = [e for e in bm.edges if not e.is_manifold]
+        if not non_manifold_verts and not non_manifold_edges:
+            bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+            bm.to_mesh(obj.data)
+            bm.free()
+            return True
+
+        # Fill any boundary holes
+        boundary_edges = [e for e in bm.edges if e.is_boundary]
+        if boundary_edges:
+            bmesh.ops.holes_fill(bm, edges=boundary_edges, sides=0)
+
+        bmesh.ops.triangulate(bm, faces=bm.faces)
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+        bm.to_mesh(obj.data)
+        bm.free()
+
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    ok = all(v.is_manifold for v in bm.verts) and all(e.is_manifold for e in bm.edges)
+    bm.free()
+    return ok
 
 
 def main():
@@ -97,10 +142,11 @@ def main():
     obj.location = (-cx, -cy, -bmin[2])
     bpy.ops.object.transform_apply(location=True, rotation=False, scale=False)
 
-    # 1. Native C++ OpenVDB Voxel Remesh (unions overlapping parts & welds faces)
+    # 1. High-resolution OpenVDB Voxel Remesh (default grid_res=260 -> ~0.45 mm voxels)
     bmin, bmax = get_world_bbox(obj)
     max_span = max(bmax[0] - bmin[0], bmax[1] - bmin[1], bmax[2] - bmin[2], 10.0)
-    voxel_size = max(0.35, max_span / float(args["grid_res"]))
+    fine_res = max(220, int(args["grid_res"]))
+    voxel_size = max(0.25, max_span / float(fine_res))
 
     remesh = obj.modifiers.new(name="ShapeCastVoxelRemesh", type="REMESH")
     remesh.mode = "VOXEL"
@@ -108,7 +154,7 @@ def main():
     remesh.adaptivity = 0.0
     bpy.ops.object.modifier_apply(modifier=remesh.name)
 
-    # 2. Separate loose shells after voxel remesh and keep largest connected solid
+    # 2. Separate loose shells and keep largest connected solid
     bpy.ops.object.mode_set(mode="EDIT")
     bpy.ops.mesh.select_all(action="SELECT")
     bpy.ops.mesh.remove_doubles(threshold=1e-4)
@@ -125,21 +171,33 @@ def main():
     main_obj.select_set(True)
     bpy.context.view_layer.objects.active = main_obj
 
-    # 3. Smooth + Triangulate
+    # 3. High-resolution Smooth (eliminates fine voxel stepping while preserving sharp features)
     smooth = main_obj.modifiers.new(name="ShapeCastSmooth", type="SMOOTH")
-    smooth.factor = 0.45
-    smooth.iterations = 3
+    smooth.factor = 0.5
+    smooth.iterations = 4
     bpy.ops.object.modifier_apply(modifier=smooth.name)
+
+    # 4. Adaptive Decimate (Collapse) so vertex count <= max_verts (~45,000) for Uint16 packing
+    cur_verts = len(main_obj.data.vertices)
+    if cur_verts > args["max_verts"]:
+        dec = main_obj.modifiers.new(name="ShapeCastDecimate", type="DECIMATE")
+        dec.decimate_type = "COLLAPSE"
+        dec.ratio = max(0.05, min(0.95, float(args["max_verts"]) / float(cur_verts)))
+        dec.use_collapse_triangulate = True
+        bpy.ops.object.modifier_apply(modifier=dec.name)
 
     tri = main_obj.modifiers.new(name="ShapeCastTriangulate", type="TRIANGULATE")
     bpy.ops.object.modifier_apply(modifier=tri.name)
 
-    # Clean normals & re-ground at Z=0
-    bm = bmesh.new()
-    bm.from_mesh(main_obj.data)
-    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
-    bm.to_mesh(main_obj.data)
-    bm.free()
+    manifold_ok = clean_non_manifold_bmesh(main_obj)
+
+    # Re-scale exact target_mm and ground at Z=0
+    bmin, bmax = get_world_bbox(main_obj)
+    sx = bmax[0] - bmin[0]
+    sy = bmax[1] - bmin[1]
+    s2 = args["target_mm"] / max(sx, sy, 1e-6)
+    main_obj.scale = (s2, s2, s2)
+    bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
 
     bmin, bmax = get_world_bbox(main_obj)
     cx = 0.5 * (bmin[0] + bmax[0])
@@ -166,6 +224,7 @@ def main():
     bmin, bmax = get_world_bbox(main_obj)
     summary = {
         "ok": True,
+        "manifold": manifold_ok,
         "faces": len(main_obj.data.polygons),
         "vertices": len(main_obj.data.vertices),
         "voxel_size_mm": round(voxel_size, 4),

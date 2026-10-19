@@ -61,7 +61,9 @@ const json = (
 ) => send(res, status, JSON.stringify(obj), { 'Content-Type': 'application/json', ...headers });
 
 function buildMcp(cfg: ForgeConfig, jobs: JobManager): McpServer {
-  const server = new McpServer({ name: 'shapecast-forge', version: '0.2.0' });
+  const FORGE_VERSION = '2.3.0';
+  const BLENDER_VERSION = '4.3.2';
+  const server = new McpServer({ name: 'shapecast-forge', version: FORGE_VERSION });
   const result = (obj: Record<string, unknown>) => ({
     content: [{ type: 'text' as const, text: JSON.stringify(obj) }],
     structuredContent: obj,
@@ -81,12 +83,16 @@ function buildMcp(cfg: ForgeConfig, jobs: JobManager): McpServer {
       if (active && st.alienpc === 'available') {
         return result({
           ...st,
+          version: FORGE_VERSION,
+          blender: BLENDER_VERSION,
           alienpc: 'busy',
           activeJob: { jobId: active.jobId, stage: active.stage, name: active.name },
         });
       }
       return result({
         ...st,
+        version: FORGE_VERSION,
+        blender: BLENDER_VERSION,
         activeJob: active ? { jobId: active.jobId, stage: active.stage, name: active.name } : null,
       });
     },

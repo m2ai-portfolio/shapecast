@@ -820,10 +820,40 @@ export function saturn3PrintChecks(
   return { checks, worst, layers };
 }
 
+function trianglesToIndexed(d: Float64Array): IndexedMesh {
+  const map = new Map<string, number>();
+  const coords: number[] = [];
+  const faces: number[][] = [];
+  const q = (v: number) => {
+    const r = Math.round(v * 1e5) / 1e5;
+    return r === 0 ? '0' : String(r);
+  };
+  for (let i = 0; i < d.length; i += 9) {
+    const tri: number[] = [];
+    for (let k = 0; k < 9; k += 3) {
+      const x = d[i + k],
+        y = d[i + k + 1],
+        z = d[i + k + 2];
+      const key = `${q(x)},${q(y)},${q(z)}`;
+      let idx = map.get(key);
+      if (idx === undefined) {
+        idx = coords.length / 3;
+        map.set(key, idx);
+        coords.push(x, y, z);
+      }
+      tri.push(idx);
+    }
+    if (tri[0] !== tri[1] && tri[1] !== tri[2] && tri[2] !== tri[0]) {
+      faces.push(tri);
+    }
+  }
+  return { coords: Float64Array.from(coords), faces };
+}
+
 /**
  * Full post-process & repair pipeline:
- * 1. If input is already a watertight 2-manifold single shell, scale & ground directly.
- * 2. Otherwise (e.g. Hunyuan3D surface-net output), run watertight voxel-remeshing + Taubin smoothing.
+ * 1. If input is already a watertight 2-manifold single shell (e.g. Blender 4.3 high-res adaptive mesh), scale & ground directly.
+ * 2. Otherwise (e.g. raw Hunyuan3D surface-net output), run watertight voxel-remeshing + Taubin smoothing.
  * 3. Scale longest horizontal side to targetMm, center XY, ground at z = 0.
  * 4. Build compact preview payload (< maxPreviewBytes, default 1.8 MB base64).
  */
@@ -831,19 +861,32 @@ export function repairAndPrepareMesh(
   rawTris: Float64Array,
   {
     targetMm = 120,
-    gridRes = 135,
+    gridRes = 155,
     maxPreviewBytes = 1_800_000,
   }: { targetMm?: number; gridRes?: number; maxPreviewBytes?: number } = {},
 ): PreparedMeshResult {
   const clampedTarget = Math.max(10, Math.min(218, Number.isFinite(targetMm) ? targetMm : 120));
-  const indexed = scaleAndGroundIndexed(remeshWatertightIndexed(rawTris, gridRes), clampedTarget);
-  // Quantize coordinates toFloat32 so packed preview and full STL match identically
+
+  // 1. Try preserving the input mesh directly (e.g. Blender 4.3 high-res OpenVDB + Decimate output)
+  let indexed = scaleAndGroundIndexed(trianglesToIndexed(rawTris), clampedTarget);
   for (let i = 0; i < indexed.coords.length; i++) {
     indexed.coords[i] = Math.fround(indexed.coords[i]);
   }
-  const tris = indexedToTriangles(indexed);
+  let tris = indexedToTriangles(indexed);
   if (signedVolume(tris) < 0) flipWinding(tris);
-  const manifold = meshChecks(tris);
+  let manifold = meshChecks(tris);
+
+  // 2. Fallback to TypeScript voxel remesher if raw mesh had non-manifold edges or holes
+  if (!manifold.ok) {
+    indexed = scaleAndGroundIndexed(remeshWatertightIndexed(rawTris, gridRes), clampedTarget);
+    for (let i = 0; i < indexed.coords.length; i++) {
+      indexed.coords[i] = Math.fround(indexed.coords[i]);
+    }
+    tris = indexedToTriangles(indexed);
+    if (signedVolume(tris) < 0) flipWinding(tris);
+    manifold = meshChecks(tris);
+  }
+
   const bbox = boundingBox(tris);
   const volumeMm3 = manifold.volume;
   const volumeMl = +(volumeMm3 / 1000).toFixed(2);
@@ -852,7 +895,7 @@ export function repairAndPrepareMesh(
   let preview = packIndexedMesh(indexed, true);
   if (preview.vertsBase64.length + preview.indicesBase64.length > maxPreviewBytes) {
     const decimated = scaleAndGroundIndexed(
-      remeshWatertightIndexed(rawTris, Math.min(85, Math.floor(gridRes * 0.65))),
+      remeshWatertightIndexed(rawTris, Math.min(95, Math.floor(gridRes * 0.65))),
       clampedTarget,
     );
     for (let i = 0; i < decimated.coords.length; i++) {

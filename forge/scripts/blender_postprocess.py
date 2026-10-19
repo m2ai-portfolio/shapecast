@@ -81,13 +81,41 @@ def main():
     obj = bpy.context.view_layer.objects.active
     bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
 
-    # Separate loose parts and keep largest component
+    # Scale longest horizontal dimension (X or Y) to target_mm before voxel remesh
+    bmin, bmax = get_world_bbox(obj)
+    sx = bmax[0] - bmin[0]
+    sy = bmax[1] - bmin[1]
+    horiz = max(sx, sy, 1e-6)
+    scale_factor = args["target_mm"] / horiz
+    obj.scale = (scale_factor, scale_factor, scale_factor)
+    bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+
+    # Center XY at origin and ground Z at 0
+    bmin, bmax = get_world_bbox(obj)
+    cx = 0.5 * (bmin[0] + bmax[0])
+    cy = 0.5 * (bmin[1] + bmax[1])
+    obj.location = (-cx, -cy, -bmin[2])
+    bpy.ops.object.transform_apply(location=True, rotation=False, scale=False)
+
+    # 1. Native C++ OpenVDB Voxel Remesh (unions overlapping parts & welds faces)
+    bmin, bmax = get_world_bbox(obj)
+    max_span = max(bmax[0] - bmin[0], bmax[1] - bmin[1], bmax[2] - bmin[2], 10.0)
+    voxel_size = max(0.35, max_span / float(args["grid_res"]))
+
+    remesh = obj.modifiers.new(name="ShapeCastVoxelRemesh", type="REMESH")
+    remesh.mode = "VOXEL"
+    remesh.voxel_size = voxel_size
+    remesh.adaptivity = 0.0
+    bpy.ops.object.modifier_apply(modifier=remesh.name)
+
+    # 2. Separate loose shells after voxel remesh and keep largest connected solid
     bpy.ops.object.mode_set(mode="EDIT")
     bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.mesh.remove_doubles(threshold=1e-4)
     bpy.ops.mesh.separate(type="LOOSE")
     bpy.ops.object.mode_set(mode="OBJECT")
 
-    parts = [o for o in bpy.context.scene.objects if o.type == "MESH"]
+    parts = [o for o in bpy.context.scene.objects if o.type == "MESH" and len(o.data.polygons) > 0]
     parts.sort(key=lambda o: len(o.data.polygons), reverse=True)
     main_obj = parts[0]
     for extra in parts[1:]:
@@ -97,33 +125,7 @@ def main():
     main_obj.select_set(True)
     bpy.context.view_layer.objects.active = main_obj
 
-    # Scale longest horizontal dimension (X or Y) to target_mm
-    bmin, bmax = get_world_bbox(main_obj)
-    sx = bmax[0] - bmin[0]
-    sy = bmax[1] - bmin[1]
-    horiz = max(sx, sy, 1e-6)
-    scale_factor = args["target_mm"] / horiz
-    main_obj.scale = (scale_factor, scale_factor, scale_factor)
-    bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
-
-    # Center XY at origin and ground Z at 0
-    bmin, bmax = get_world_bbox(main_obj)
-    cx = 0.5 * (bmin[0] + bmax[0])
-    cy = 0.5 * (bmin[1] + bmax[1])
-    main_obj.location = (-cx, -cy, -bmin[2])
-    bpy.ops.object.transform_apply(location=True, rotation=False, scale=False)
-
-    # Native C++ Voxel Remesh + Smooth + Triangulate
-    bmin, bmax = get_world_bbox(main_obj)
-    max_span = max(bmax[0] - bmin[0], bmax[1] - bmin[1], bmax[2] - bmin[2], 10.0)
-    voxel_size = max(0.35, max_span / float(args["grid_res"]))
-
-    remesh = main_obj.modifiers.new(name="ShapeCastVoxelRemesh", type="REMESH")
-    remesh.mode = "VOXEL"
-    remesh.voxel_size = voxel_size
-    remesh.adaptivity = 0.0
-    bpy.ops.object.modifier_apply(modifier=remesh.name)
-
+    # 3. Smooth + Triangulate
     smooth = main_obj.modifiers.new(name="ShapeCastSmooth", type="SMOOTH")
     smooth.factor = 0.45
     smooth.iterations = 3

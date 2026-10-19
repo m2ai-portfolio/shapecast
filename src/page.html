@@ -423,7 +423,7 @@
         id="versionBadge"
         class="small num"
         style="padding: 1px 6px; border: 1px solid var(--line); border-radius: 4px"
-        >UI v2.5</span
+        >UI v2.6</span
       >
     </div>
     <div class="sub">Photo, sketch or prompt to a Saturn 3 resin print</div>
@@ -495,6 +495,22 @@
         maxlength="4000"
         placeholder="a 1970 chevy chevelle miniature car, or a stand for my phone"
       ></textarea>
+      <div
+        class="row mt small"
+        style="justify-content: space-between; gap: 6px; color: var(--fg); align-items: center"
+      >
+        <label for="studioPrepSelect" style="margin: 0">Step 0 Studio Prep</label>
+        <select
+          id="studioPrepSelect"
+          aria-label="Step 0 Studio Prep"
+          style="width: auto; padding: 3px 6px; font-size: 12px"
+        >
+          <option value="auto" selected>Auto (Gemini &rarr; ChatGPT &rarr; Local)</option>
+          <option value="gemini">Google Gemini Image</option>
+          <option value="openai">ChatGPT Image (gpt-image-1)</option>
+          <option value="local">Local Flux / Raw Photo</option>
+        </select>
+      </div>
       <label
         class="row mt small"
         style="gap: 6px; cursor: pointer; color: var(--fg); align-items: center"

@@ -11,6 +11,7 @@ import {
   type ForgePipelineOptions,
   type ForgePipelineResult,
 } from './comfy.js';
+import type { StudioEngine } from './studioPrep.js';
 
 export type JobStage =
   'queued' | 'reference_image' | 'mesh_generation' | 'repair_and_export' | 'done' | 'error';
@@ -49,6 +50,7 @@ export function createJobManager(opts: JobManagerOptions) {
   async function startJob(input: {
     prompt?: string;
     photoBase64?: string;
+    studioEngine?: StudioEngine;
     targetMm?: number;
     name?: string;
     seed?: number;
@@ -63,7 +65,15 @@ export function createJobManager(opts: JobManagerOptions) {
     | { ok: true; job: ForgeJobState }
     | { ok: false; reason: string; alienpc: 'busy' | 'unavailable' | 'invalid' }
   > {
-    if (!input.prompt?.trim() && !input.photoBase64?.trim()) {
+    let rawPrompt = input.prompt?.trim() ?? '';
+    let parsedStudioEngine: StudioEngine | undefined = input.studioEngine;
+    const studioMatch = rawPrompt.match(/^\[studio:(auto|gemini|openai|local|off)\]\s*(.*)$/is);
+    if (studioMatch) {
+      parsedStudioEngine = studioMatch[1].toLowerCase() as StudioEngine;
+      rawPrompt = studioMatch[2].trim();
+    }
+
+    if (!rawPrompt && !input.photoBase64?.trim()) {
       return {
         ok: false,
         alienpc: 'invalid',
@@ -95,7 +105,6 @@ export function createJobManager(opts: JobManagerOptions) {
       };
     }
 
-    const rawPrompt = input.prompt?.trim() ?? '';
     const isRefine = rawPrompt.startsWith('__FORGE_REFINE__:');
     const isBlender =
       rawPrompt.startsWith('__FORGE_BLENDER__:') ||
@@ -176,8 +185,9 @@ export function createJobManager(opts: JobManagerOptions) {
           const hdCfg = isHd ? JSON.parse(rawPrompt.slice('__FORGE_HD__:'.length)) : null;
           res = await runPipeline({
             comfyUrl: opts.comfyUrl,
-            prompt: hdCfg ? hdCfg.prompt : input.prompt,
+            prompt: hdCfg ? hdCfg.prompt : rawPrompt || undefined,
             photoBase64: input.photoBase64,
+            studioEngine: hdCfg?.studioEngine ?? parsedStudioEngine,
             targetMm,
             name: label,
             seed: input.seed ?? 731,

@@ -413,10 +413,10 @@ function addPhotos(files) {
 }
 
 // ---------- Mesh Forge (Hunyuan3D via MCP) ----------
-const UI_VERSION = '2.5';
+const UI_VERSION = '2.6';
 const STAGE_LABELS = {
   queued: 'Queued on AlienPC...',
-  reference_image: '1/3 Generating reference image (Flux)...',
+  reference_image: '1/3 Step 0 Studio Prep (Gemini / ChatGPT / Flux)...',
   mesh_generation: '2/3 Sculpting 3D mesh (Hunyuan3D 2.1)...',
   repair_and_export: '3/3 Blender 4.3 remesh & writing STL...',
 };
@@ -627,8 +627,11 @@ async function runCriticStep({
         true,
         `Refining via Hunyuan3D HD (octree ${review.octreeResolution || 384}, pass ${pass})...`,
       );
+      const studioEngine =
+        /** @type {HTMLSelectElement | null} */ ($('studioPrepSelect'))?.value || 'auto';
       const hdSpec = {
         prompt: review.refinedPrompt || state.project.brief || undefined,
+        studioEngine,
         octreeResolution: review.octreeResolution || 384,
         steps: review.steps || 40,
         gridRes: rp.gridRes || 320,
@@ -779,17 +782,19 @@ async function runForgeGenerate() {
       note(`Sending photo to Mesh Forge (${Math.round(shrunk.blob.size / 1024)} KB JPEG).`);
     }
 
+    const studioEngine =
+      /** @type {HTMLSelectElement | null} */ ($('studioPrepSelect'))?.value || 'auto';
     setBusy(true, 'Contacting ShapeCast Forge on AlienPC...');
     addChat(
       'user',
-      `Forge mesh (${targetMm} mm): ${brief || '(from photo)'}${photoBlob ? ' [+photo]' : ''}`,
+      `Forge mesh (${targetMm} mm, Studio Prep: ${studioEngine}): ${brief || '(from photo)'}${photoBlob ? ' [+photo]' : ''}`,
     );
 
     const startRes = await caps.mcp.callTool(
       FORGE_SERVER,
       'forge_generate',
       {
-        prompt: brief || undefined,
+        prompt: `[studio:${studioEngine}] ${brief}`.trim(),
         photoBase64,
         targetMm,
         name,
@@ -805,9 +810,12 @@ async function runForgeGenerate() {
 
     const job = await pollForgeJobUntilDone(start.jobId, controller);
     if (!job) return;
+    const prepNote = job.qualityMetrics?.studioPrep
+      ? ` [Step 0: ${job.qualityMetrics.studioPrep}]`
+      : '';
     addChat(
       'claude',
-      `Mesh ready: ${job.triangleCount.toLocaleString()} watertight triangles (${job.bbox.size.map((x) => x.toFixed(1)).join(' x ')} mm). Written to AlienPC: ${job.stlPath}`,
+      `Mesh ready${prepNote}: ${job.triangleCount.toLocaleString()} watertight triangles (${job.bbox.size.map((x) => x.toFixed(1)).join(' x ')} mm). Written to AlienPC: ${job.stlPath}`,
     );
 
     const autoRefine = /** @type {HTMLInputElement | null} */ ($('autoRefineCheck'))?.checked;

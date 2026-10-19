@@ -423,7 +423,7 @@
         id="versionBadge"
         class="small num"
         style="padding: 1px 6px; border: 1px solid var(--line); border-radius: 4px"
-        >UI v2.5</span
+        >UI v2.6</span
       >
     </div>
     <div class="sub">Photo, sketch or prompt to a Saturn 3 resin print</div>
@@ -495,6 +495,22 @@
         maxlength="4000"
         placeholder="a 1970 chevy chevelle miniature car, or a stand for my phone"
       ></textarea>
+      <div
+        class="row mt small"
+        style="justify-content: space-between; gap: 6px; color: var(--fg); align-items: center"
+      >
+        <label for="studioPrepSelect" style="margin: 0">Step 0 Studio Prep</label>
+        <select
+          id="studioPrepSelect"
+          aria-label="Step 0 Studio Prep"
+          style="width: auto; padding: 3px 6px; font-size: 12px"
+        >
+          <option value="auto" selected>Auto (Gemini &rarr; ChatGPT &rarr; Local)</option>
+          <option value="gemini">Google Gemini Image</option>
+          <option value="openai">ChatGPT Image (gpt-image-1)</option>
+          <option value="local">Local Flux / Raw Photo</option>
+        </select>
+      </div>
       <label
         class="row mt small"
         style="gap: 6px; cursor: pointer; color: var(--fg); align-items: center"
@@ -2928,10 +2944,10 @@ function addPhotos(files) {
 }
 
 // ---------- Mesh Forge (Hunyuan3D via MCP) ----------
-const UI_VERSION = '2.5';
+const UI_VERSION = '2.6';
 const STAGE_LABELS = {
   queued: 'Queued on AlienPC...',
-  reference_image: '1/3 Generating reference image (Flux)...',
+  reference_image: '1/3 Step 0 Studio Prep (Gemini / ChatGPT / Flux)...',
   mesh_generation: '2/3 Sculpting 3D mesh (Hunyuan3D 2.1)...',
   repair_and_export: '3/3 Blender 4.3 remesh & writing STL...',
 };
@@ -3142,8 +3158,11 @@ async function runCriticStep({
         true,
         `Refining via Hunyuan3D HD (octree ${review.octreeResolution || 384}, pass ${pass})...`,
       );
+      const studioEngine =
+        /** @type {HTMLSelectElement | null} */ ($('studioPrepSelect'))?.value || 'auto';
       const hdSpec = {
         prompt: review.refinedPrompt || state.project.brief || undefined,
+        studioEngine,
         octreeResolution: review.octreeResolution || 384,
         steps: review.steps || 40,
         gridRes: rp.gridRes || 320,
@@ -3294,17 +3313,19 @@ async function runForgeGenerate() {
       note(`Sending photo to Mesh Forge (${Math.round(shrunk.blob.size / 1024)} KB JPEG).`);
     }
 
+    const studioEngine =
+      /** @type {HTMLSelectElement | null} */ ($('studioPrepSelect'))?.value || 'auto';
     setBusy(true, 'Contacting ShapeCast Forge on AlienPC...');
     addChat(
       'user',
-      `Forge mesh (${targetMm} mm): ${brief || '(from photo)'}${photoBlob ? ' [+photo]' : ''}`,
+      `Forge mesh (${targetMm} mm, Studio Prep: ${studioEngine}): ${brief || '(from photo)'}${photoBlob ? ' [+photo]' : ''}`,
     );
 
     const startRes = await caps.mcp.callTool(
       FORGE_SERVER,
       'forge_generate',
       {
-        prompt: brief || undefined,
+        prompt: `[studio:${studioEngine}] ${brief}`.trim(),
         photoBase64,
         targetMm,
         name,
@@ -3320,9 +3341,12 @@ async function runForgeGenerate() {
 
     const job = await pollForgeJobUntilDone(start.jobId, controller);
     if (!job) return;
+    const prepNote = job.qualityMetrics?.studioPrep
+      ? ` [Step 0: ${job.qualityMetrics.studioPrep}]`
+      : '';
     addChat(
       'claude',
-      `Mesh ready: ${job.triangleCount.toLocaleString()} watertight triangles (${job.bbox.size.map((x) => x.toFixed(1)).join(' x ')} mm). Written to AlienPC: ${job.stlPath}`,
+      `Mesh ready${prepNote}: ${job.triangleCount.toLocaleString()} watertight triangles (${job.bbox.size.map((x) => x.toFixed(1)).join(' x ')} mm). Written to AlienPC: ${job.stlPath}`,
     );
 
     const autoRefine = /** @type {HTMLInputElement | null} */ ($('autoRefineCheck'))?.checked;

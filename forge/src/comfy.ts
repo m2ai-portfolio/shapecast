@@ -14,6 +14,7 @@ import {
   writeBinaryStl,
   type PreparedMeshResult,
 } from './mesh.js';
+import { runStudioPrep, type StudioEngine } from './studioPrep.js';
 
 const execFileAsync = promisify(execFile);
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -253,6 +254,7 @@ export interface ForgePipelineOptions extends BlenderRemeshOptions {
   comfyUrl: string;
   prompt?: string;
   photoBase64?: string;
+  studioEngine?: StudioEngine;
   targetMm?: number;
   name?: string;
   seed?: number;
@@ -505,6 +507,7 @@ export async function runForgePipeline(opts: ForgePipelineOptions): Promise<Forg
     comfyUrl,
     prompt,
     photoBase64,
+    studioEngine,
     targetMm = 120,
     name,
     seed = 731,
@@ -538,15 +541,37 @@ export async function runForgePipeline(opts: ForgePipelineOptions): Promise<Forg
   const slug = slugify(label);
   const runId = `sc_${Date.now().toString(36)}_${slug.slice(0, 16)}`;
 
-  // 2. Reference image (Flux text-to-image OR direct photo upload)
+  // 2. Step 0 Studio Reference Prep (Gemini -> OpenAI gpt-image-1 -> Local Flux / Raw Photo fallback)
   onStage?.('reference_image');
   let inputImageName: string;
-  if (photoBase64 && photoBase64.trim()) {
-    const rawB64 = photoBase64.includes(',') ? photoBase64.split(',')[1] : photoBase64.trim();
-    const imgBytes = new Uint8Array(Buffer.from(rawB64, 'base64'));
-    if (imgBytes.byteLength === 0) throw new Error('Uploaded photo is empty');
-    inputImageName = await uploadComfyImage(comfyUrl, imgBytes, `${runId}_input.jpg`);
+  let studioProvider = 'local';
+  const hasPhoto = Boolean(photoBase64 && photoBase64.trim());
+  let rawPhotoBytes: Uint8Array | undefined;
+  if (hasPhoto) {
+    const rawB64 = photoBase64!.includes(',') ? photoBase64!.split(',')[1] : photoBase64!.trim();
+    rawPhotoBytes = new Uint8Array(Buffer.from(rawB64, 'base64'));
+    if (rawPhotoBytes.byteLength === 0) throw new Error('Uploaded photo is empty');
+  }
+
+  const effectiveStudioEngine: StudioEngine = studioEngine ?? (skipScp ? 'local' : 'auto');
+  const studioRes = await runStudioPrep({
+    prompt,
+    photoBytes: rawPhotoBytes,
+    engine: effectiveStudioEngine,
+  });
+
+  if (studioRes) {
+    studioProvider = studioRes.model ?? studioRes.provider;
+    inputImageName = await uploadComfyImage(
+      comfyUrl,
+      studioRes.bytes,
+      `${runId}_studio.${studioRes.ext}`,
+    );
+  } else if (rawPhotoBytes) {
+    studioProvider = 'raw_photo';
+    inputImageName = await uploadComfyImage(comfyUrl, rawPhotoBytes, `${runId}_input.jpg`);
   } else {
+    studioProvider = 'flux_local';
     const fluxWf = buildFluxWorkflow(prompt!, runId, seed);
     const fluxOut = await runComfyWorkflow(comfyUrl, fluxWf, { pollMs });
     const refFile = extractSavedFile(fluxOut['8'], `${runId}_ref_00001_.png`);
@@ -575,7 +600,10 @@ export async function runForgePipeline(opts: ForgePipelineOptions): Promise<Forg
       undefined,
       { maxVerts, smoothIterations, smoothFactor, aspectRatioTarget },
     );
-    qualityMetrics = post.summary?.quality_metrics ?? undefined;
+    qualityMetrics = {
+      ...(post.summary?.quality_metrics ?? {}),
+      studioPrep: studioProvider,
+    };
     if (post.ok) {
       glbBytes = await fetchComfyView(comfyUrl, blenderGlbName, 'shapecast', 'output');
     } else {

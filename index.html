@@ -3002,10 +3002,22 @@ async function refreshForgeStatus() {
 }
 
 async function pollForgeJobUntilDone(jobId, controller) {
+  let transientErrors = 0;
   while (!controller.signal.aborted) {
     await new Promise((r) => setTimeout(r, 2500));
     if (controller.signal.aborted) return null;
-    const pollRes = await caps.mcp.callTool(FORGE_SERVER, 'forge_job', { jobId }, { cache: false });
+    let pollRes;
+    try {
+      pollRes = await caps.mcp.callTool(FORGE_SERVER, 'forge_job', { jobId }, { cache: false });
+      transientErrors = 0;
+    } catch (pollErr) {
+      transientErrors++;
+      if (transientErrors <= 5 && !controller.signal.aborted) {
+        setBusy(true, `Finishing mesh on AlienPC (reconnecting ${transientErrors}/5)...`);
+        continue;
+      }
+      throw pollErr;
+    }
     const job = pollRes?.payload;
     $('rawReply').textContent = JSON.stringify(
       {

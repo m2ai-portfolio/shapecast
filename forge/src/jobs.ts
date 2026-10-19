@@ -133,7 +133,7 @@ export function createJobManager(opts: JobManagerOptions) {
           octreeResolution: input.octreeResolution ?? 320,
           steps: input.steps ?? 30,
           gridRes: input.gridRes ?? opts.gridRes ?? 260,
-          maxVerts: input.maxVerts ?? 48000,
+          maxVerts: input.maxVerts ?? 44000,
           smoothIterations: input.smoothIterations ?? 3,
           smoothFactor: input.smoothFactor ?? 0.4,
           aspectRatioTarget: input.aspectRatioTarget,

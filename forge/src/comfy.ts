@@ -2,8 +2,9 @@
  * ComfyUI workflow runner and AlienPC STL delivery for ShapeCast Forge.
  * Only submits fixed workflow templates from forge/workflows/; user text only enters the CLIP prompt field.
  */
-import { mkdirSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -14,6 +15,7 @@ import {
   type PreparedMeshResult,
 } from './mesh.js';
 
+const execFileAsync = promisify(execFile);
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WORKFLOWS_DIR = join(__dirname, '..', 'workflows');
 
@@ -200,7 +202,7 @@ export interface StlDeliveryResult {
   deliveredToAlienPc: boolean;
 }
 
-export function deliverStlToAlienPc(
+export async function deliverStlToAlienPc(
   stlBuf: ArrayBuffer,
   stlFilename: string,
   {
@@ -208,7 +210,7 @@ export function deliverStlToAlienPc(
     sshHost = process.env.FORGE_ALIENPC_SSH ?? 'gaming-pc',
     skipScp = false,
   }: { localOutDir?: string; sshHost?: string; skipScp?: boolean } = {},
-): StlDeliveryResult {
+): Promise<StlDeliveryResult> {
   const alienPcDir = 'C:\\Users\\matth\\Documents\\ShapeCast';
   const stlPath = `${alienPcDir}\\${stlFilename}`;
   const outDir = localOutDir ?? join(tmpdir(), 'shapecast-forge-out');
@@ -221,7 +223,7 @@ export function deliverStlToAlienPc(
   }
 
   try {
-    execFileSync(
+    await execFileAsync(
       'scp',
       [
         '-o',
@@ -231,7 +233,7 @@ export function deliverStlToAlienPc(
         localCopyPath,
         `${sshHost}:C:/Users/matth/Documents/ShapeCast/${stlFilename}`,
       ],
-      { timeout: 15_000, stdio: 'pipe' },
+      { timeout: 15_000 },
     );
     return { stlFilename, stlPath, localCopyPath, deliveredToAlienPc: true };
   } catch {
@@ -272,7 +274,7 @@ export interface ForgePipelineResult extends PreparedMeshResult {
   qualityMetrics?: Record<string, any>;
 }
 
-export function runBlenderPostProcessOnAlienPc(
+export async function runBlenderPostProcessOnAlienPc(
   inputFilename: string,
   subfolder: string,
   outGlbFilename: string,
@@ -280,10 +282,10 @@ export function runBlenderPostProcessOnAlienPc(
   gridRes: number,
   sshHost = process.env.FORGE_ALIENPC_SSH ?? 'gaming-pc',
   extra: BlenderRemeshOptions = {},
-): { ok: boolean; summary?: any } {
+): Promise<{ ok: boolean; summary?: any }> {
   const inPath = `C:/Users/matth/ComfyUI/output/${subfolder ? `${subfolder}/` : ''}${inputFilename}`;
   const outPath = `C:/Users/matth/ComfyUI/output/shapecast/${outGlbFilename}`;
-  const maxVerts = extra.maxVerts ?? 48000;
+  const maxVerts = Math.min(46000, extra.maxVerts ?? 44000);
   const smoothIters = extra.smoothIterations ?? 3;
   const smoothFactor = extra.smoothFactor ?? 0.4;
   const aspectArg =
@@ -292,10 +294,10 @@ export function runBlenderPostProcessOnAlienPc(
       : '';
   const cmd = `C:\\Blender\\blender-4.3.2-windows-x64\\blender.exe --background --python C:\\Blender\\blender_postprocess.py -- --input "${inPath}" --output-glb "${outPath}" --target-mm ${targetMm} --grid-res ${gridRes} --max-verts ${maxVerts} --smooth-iters ${smoothIters} --smooth-factor ${smoothFactor}${aspectArg}`;
   try {
-    const out = execFileSync(
+    const { stdout: out } = await execFileAsync(
       'ssh',
       ['-n', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', sshHost, cmd],
-      { timeout: 45_000, stdio: 'pipe', encoding: 'utf8' },
+      { timeout: 45_000, maxBuffer: 10 * 1024 * 1024 },
     );
     const marker = 'BLENDER_POSTPROCESS_JSON:';
     const idx = out.indexOf(marker);
@@ -317,7 +319,7 @@ export async function runBlenderRefineOnAlienPc({
   name = 'refined-model',
   targetMm = 120,
   gridRes = 320,
-  maxVerts = 58000,
+  maxVerts = 45000,
   smoothIterations = 1,
   smoothFactor = 0.25,
   aspectRatioTarget,
@@ -337,7 +339,7 @@ export async function runBlenderRefineOnAlienPc({
   const slug = slugify(label);
   let targetRaw = rawGlbFilename?.trim() || '';
   if (!targetRaw || /[^a-zA-Z0-9_.-]/.test(targetRaw)) {
-    const listOut = execFileSync(
+    const { stdout: listOut } = await execFileAsync(
       'ssh',
       [
         '-n',
@@ -348,7 +350,7 @@ export async function runBlenderRefineOnAlienPc({
         sshHost,
         'dir /b /od C:\\Users\\matth\\ComfyUI\\output\\shapecast\\sc_*_00001_.glb',
       ],
-      { timeout: 10_000, stdio: 'pipe', encoding: 'utf8' },
+      { timeout: 10_000 },
     );
     const lines = listOut
       .split(/\r?\n/)
@@ -361,7 +363,7 @@ export async function runBlenderRefineOnAlienPc({
   }
 
   const outGlbFilename = `${targetRaw.replace(/\.glb$/i, '')}_refined_${Date.now().toString(36)}.glb`;
-  const post = runBlenderPostProcessOnAlienPc(
+  const post = await runBlenderPostProcessOnAlienPc(
     targetRaw,
     'shapecast',
     outGlbFilename,
@@ -375,14 +377,20 @@ export async function runBlenderRefineOnAlienPc({
   }
 
   const glbBytes = await fetchComfyView(comfyUrl, outGlbFilename, 'shapecast', 'output');
+  await new Promise((r) => setImmediate(r));
   const rawTris = await parseGlbTriangles(glbBytes);
+  await new Promise((r) => setImmediate(r));
   const prepared = repairAndPrepareMesh(rawTris, { targetMm, gridRes });
   if (!prepared.manifold.ok) {
     throw new Error(`Refined mesh failed manifold check: ${prepared.manifold.errors.join('; ')}`);
   }
   const stlFilename = `${dateStamp()}-${slug}.stl`;
   const stlBuf = writeBinaryStl(prepared.tris, label);
-  const delivery = deliverStlToAlienPc(stlBuf, stlFilename, { localOutDir, skipScp, sshHost });
+  const delivery = await deliverStlToAlienPc(stlBuf, stlFilename, {
+    localOutDir,
+    skipScp,
+    sshHost,
+  });
   return {
     ...prepared,
     name: label,
@@ -434,7 +442,7 @@ print('BLENDER_SCRIPT_OK')
 `;
   writeFileSync(localScriptPath, wrappedScript, 'utf8');
 
-  execFileSync(
+  await execFileAsync(
     'scp',
     [
       '-o',
@@ -444,14 +452,14 @@ print('BLENDER_SCRIPT_OK')
       localScriptPath,
       `${sshHost}:${remoteScriptPath}`,
     ],
-    { timeout: 15_000, stdio: 'pipe' },
+    { timeout: 15_000 },
   );
 
   const cmd = `C:\\Blender\\blender-4.3.2-windows-x64\\blender.exe --background --python "${remoteScriptPath}" & del "${remoteScriptPath.replace(/\//g, '\\')}"`;
-  const stdout = execFileSync(
+  const { stdout } = await execFileAsync(
     'ssh',
     ['-n', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', sshHost, cmd],
-    { timeout: 45_000, stdio: 'pipe', encoding: 'utf8' },
+    { timeout: 45_000, maxBuffer: 10 * 1024 * 1024 },
   );
   if (!stdout.includes('BLENDER_SCRIPT_OK')) {
     throw new Error('Blender script did not complete cleanly');
@@ -459,7 +467,7 @@ print('BLENDER_SCRIPT_OK')
 
   // Also run blender_postprocess on the exported GLB so it is voxel-remeshed & smoothed in Blender
   const postGlbFilename = `${runId}_post.glb`;
-  const post = runBlenderPostProcessOnAlienPc(
+  const post = await runBlenderPostProcessOnAlienPc(
     outGlbFilename,
     'shapecast',
     postGlbFilename,
@@ -469,14 +477,20 @@ print('BLENDER_SCRIPT_OK')
   );
   const finalGlbName = post.ok ? postGlbFilename : outGlbFilename;
   const glbBytes = await fetchComfyView(comfyUrl, finalGlbName, 'shapecast', 'output');
+  await new Promise((r) => setImmediate(r));
   const rawTris = await parseGlbTriangles(glbBytes);
+  await new Promise((r) => setImmediate(r));
   const prepared = repairAndPrepareMesh(rawTris, { targetMm, gridRes });
   if (!prepared.manifold.ok) {
     throw new Error(`Mesh repair failed manifold check: ${prepared.manifold.errors.join('; ')}`);
   }
   const stlFilename = `${dateStamp()}-${slug}.stl`;
   const stlBuf = writeBinaryStl(prepared.tris, label);
-  const delivery = deliverStlToAlienPc(stlBuf, stlFilename, { localOutDir, skipScp, sshHost });
+  const delivery = await deliverStlToAlienPc(stlBuf, stlFilename, {
+    localOutDir,
+    skipScp,
+    sshHost,
+  });
   return {
     ...prepared,
     name: label,
@@ -495,7 +509,7 @@ export async function runForgePipeline(opts: ForgePipelineOptions): Promise<Forg
     name,
     seed = 731,
     gridRes = 260,
-    maxVerts = 48000,
+    maxVerts = 44000,
     smoothIterations = 3,
     smoothFactor = 0.4,
     aspectRatioTarget,
@@ -552,7 +566,7 @@ export async function runForgePipeline(opts: ForgePipelineOptions): Promise<Forg
   let qualityMetrics: Record<string, any> | undefined;
   if (!skipScp) {
     const blenderGlbName = `${runId}_blender.glb`;
-    const post = runBlenderPostProcessOnAlienPc(
+    const post = await runBlenderPostProcessOnAlienPc(
       glbFile.filename,
       glbFile.subfolder,
       blenderGlbName,
@@ -571,7 +585,9 @@ export async function runForgePipeline(opts: ForgePipelineOptions): Promise<Forg
     glbBytes = await fetchComfyView(comfyUrl, glbFile.filename, glbFile.subfolder, 'output');
   }
 
+  await new Promise((r) => setImmediate(r));
   const rawTris = await parseGlbTriangles(glbBytes);
+  await new Promise((r) => setImmediate(r));
   const prepared = repairAndPrepareMesh(rawTris, { targetMm, gridRes });
   if (!prepared.manifold.ok) {
     throw new Error(`Mesh repair failed manifold check: ${prepared.manifold.errors.join('; ')}`);
@@ -579,7 +595,7 @@ export async function runForgePipeline(opts: ForgePipelineOptions): Promise<Forg
 
   const stlFilename = `${dateStamp()}-${slug}.stl`;
   const stlBuf = writeBinaryStl(prepared.tris, label);
-  const delivery = deliverStlToAlienPc(stlBuf, stlFilename, { localOutDir, skipScp });
+  const delivery = await deliverStlToAlienPc(stlBuf, stlFilename, { localOutDir, skipScp });
 
   return {
     ...prepared,

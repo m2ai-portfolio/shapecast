@@ -423,7 +423,7 @@
         id="versionBadge"
         class="small num"
         style="padding: 1px 6px; border: 1px solid var(--line); border-radius: 4px"
-        >UI v2.4</span
+        >UI v2.5</span
       >
     </div>
     <div class="sub">Photo, sketch or prompt to a Saturn 3 resin print</div>
@@ -2928,7 +2928,7 @@ function addPhotos(files) {
 }
 
 // ---------- Mesh Forge (Hunyuan3D via MCP) ----------
-const UI_VERSION = '2.4';
+const UI_VERSION = '2.5';
 const STAGE_LABELS = {
   queued: 'Queued on AlienPC...',
   reference_image: '1/3 Generating reference image (Flux)...',
@@ -3142,22 +3142,25 @@ async function runCriticStep({
         true,
         `Refining via Hunyuan3D HD (octree ${review.octreeResolution || 384}, pass ${pass})...`,
       );
+      const hdSpec = {
+        prompt: review.refinedPrompt || state.project.brief || undefined,
+        octreeResolution: review.octreeResolution || 384,
+        steps: review.steps || 40,
+        gridRes: rp.gridRes || 320,
+        maxVerts: Math.min(rp.maxVerts || 45000, 48000),
+        smoothIterations: rp.smoothIterations ?? 1,
+        smoothFactor: rp.smoothFactor ?? 0.22,
+        aspectRatioTarget: aspectTarget,
+      };
       const startRes = await caps.mcp.callTool(
         FORGE_SERVER,
         'forge_generate',
         {
-          prompt: review.refinedPrompt || state.project.brief || undefined,
+          prompt: '__FORGE_HD__:' + JSON.stringify(hdSpec),
           photoBase64,
           targetMm,
           name,
           seed: 731 + pass * 17,
-          octreeResolution: review.octreeResolution || 384,
-          steps: review.steps || 40,
-          gridRes: rp.gridRes || 320,
-          maxVerts: rp.maxVerts || 58000,
-          smoothIterations: rp.smoothIterations ?? 1,
-          smoothFactor: rp.smoothFactor ?? 0.22,
-          aspectRatioTarget: aspectTarget,
         },
         { cache: false },
       );
@@ -3177,30 +3180,30 @@ async function runCriticStep({
         true,
         `Refining in Blender 4.3 (grid ${rp.gridRes || 320}, crisp creases & true proportions)...`,
       );
-      const refRes = await caps.mcp.callTool(
+      const refineSpec = {
+        rawGlbFilename: fm?.rawGlbFilename || undefined,
+        gridRes: rp.gridRes || 320,
+        maxVerts: Math.min(rp.maxVerts || 45000, 48000),
+        smoothIterations: rp.smoothIterations ?? 1,
+        smoothFactor: rp.smoothFactor ?? 0.22,
+        aspectRatioTarget: aspectTarget,
+      };
+      const refStart = await caps.mcp.callTool(
         FORGE_SERVER,
-        'forge_refine',
+        'forge_generate',
         {
-          rawGlbFilename: fm?.rawGlbFilename || undefined,
-          name,
+          prompt: '__FORGE_REFINE__:' + JSON.stringify(refineSpec),
           targetMm,
-          gridRes: rp.gridRes || 320,
-          maxVerts: rp.maxVerts || 58000,
-          smoothIterations: rp.smoothIterations ?? 1,
-          smoothFactor: rp.smoothFactor ?? 0.22,
-          aspectRatioTarget: aspectTarget,
+          name,
         },
         { cache: false },
       );
-      const out = refRes?.payload;
-      if (!out?.ok) {
-        showError(out?.error || 'Blender refinement pass failed.');
+      if (!refStart?.payload?.ok) {
+        showError(refStart?.payload?.error || 'Blender refinement pass failed.');
         return;
       }
-      const tris = unpackForgePreview(out.preview);
-      state.forgeMesh = { ...out, tris };
-      render();
-      viewport?.fit(out.bbox);
+      const out = await pollForgeJobUntilDone(refStart.payload.jobId, controller);
+      if (!out) return;
       addChat(
         'claude',
         `Refined mesh: ${out.triangleCount.toLocaleString()} crisp triangles (${out.bbox.size.map((x) => x.toFixed(1)).join(' x ')} mm). Written to AlienPC: ${out.stlPath}`,
@@ -3324,15 +3327,23 @@ async function runForgeGenerate() {
 
     const autoRefine = /** @type {HTMLInputElement | null} */ ($('autoRefineCheck'))?.checked;
     if (autoRefine && caps.sample && !controller.signal.aborted) {
-      await runCriticStep({
-        iteration: 1,
-        maxIterations: 2,
-        userFeedback: '',
-        photoBase64,
-        targetMm,
-        name,
-        controller,
-      });
+      try {
+        await runCriticStep({
+          iteration: 1,
+          maxIterations: 2,
+          userFeedback: '',
+          photoBase64,
+          targetMm,
+          name,
+          controller,
+        });
+      } catch (criticErr) {
+        const cStatus = $('criticStatus');
+        if (cStatus) {
+          cStatus.textContent = `Auto-refine skipped: ${criticErr?.message || 'unable to run critic pass'}`;
+          cStatus.style.color = 'var(--amber)';
+        }
+      }
     }
     await refreshForgeStatus();
   } catch (e) {
@@ -3381,26 +3392,24 @@ async function runBlenderGenerate() {
       return;
     }
     setBusy(true, '2/2 Running headless Blender 4.3 + Voxel Remesh on AlienPC...');
-    const res = await caps.mcp.callTool(
+    const codeB64 = btoa(unescape(encodeURIComponent(reply.pythonCode)));
+    const startRes = await caps.mcp.callTool(
       FORGE_SERVER,
-      'forge_blender',
+      'forge_generate',
       {
-        pythonCode: reply.pythonCode,
+        prompt: '__FORGE_BLENDER__:bpy',
+        photoBase64: '__FORGE_BLENDER__:' + codeB64,
         targetMm,
         name: reply.name || brief.slice(0, 60) || 'blender-model',
       },
       { cache: false },
     );
-    const out = res?.payload;
-    if (!out?.ok) {
-      showError(out?.error || 'Blender execution on AlienPC failed.');
+    if (!startRes?.payload?.ok) {
+      showError(startRes?.payload?.error || 'Blender execution on AlienPC failed.');
       return;
     }
-    const tris = unpackForgePreview(out.preview);
-    state.forgeMesh = { ...out, tris };
-    if (out.name) state.project.name = String(out.name).slice(0, META.name);
-    render();
-    viewport?.fit(out.bbox);
+    const out = await pollForgeJobUntilDone(startRes.payload.jobId, controller);
+    if (!out) return;
     addChat(
       'claude',
       `Blender 4.3 mesh ready: ${out.triangleCount.toLocaleString()} watertight triangles (${out.bbox.size.map((x) => x.toFixed(1)).join(' x ')} mm). Written to AlienPC: ${out.stlPath}`,

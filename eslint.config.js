@@ -13,6 +13,13 @@ export default [
     rules: { 'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }] },
   },
   {
-    ignores: ['index.html', 'node_modules/**', 'tests/fixtures/**', '.superpowers/**', 'probe/**', 'forge/**'],
+    ignores: [
+      'index.html',
+      'node_modules/**',
+      'tests/fixtures/**',
+      '.superpowers/**',
+      'probe/**',
+      'forge/**',
+    ],
   },
 ];

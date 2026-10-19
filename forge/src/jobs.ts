@@ -6,6 +6,8 @@ import { randomBytes } from 'node:crypto';
 import {
   comfyStatus,
   runForgePipeline,
+  runBlenderRefineOnAlienPc,
+  runBlenderScriptOnAlienPc,
   type ForgePipelineOptions,
   type ForgePipelineResult,
 } from './comfy.js';
@@ -93,13 +95,30 @@ export function createJobManager(opts: JobManagerOptions) {
       };
     }
 
+    const rawPrompt = input.prompt?.trim() ?? '';
+    const isRefine = rawPrompt.startsWith('__FORGE_REFINE__:');
+    const isBlender =
+      rawPrompt.startsWith('__FORGE_BLENDER__:') ||
+      Boolean(input.photoBase64?.startsWith('__FORGE_BLENDER__:'));
+    const isHd = rawPrompt.startsWith('__FORGE_HD__:');
+
     const jobId = 'job_' + randomBytes(6).toString('hex');
     const targetMm = Math.max(10, Math.min(218, input.targetMm ?? 120));
-    const label = (input.name?.trim() || input.prompt?.trim() || 'photo-model').slice(0, 80);
+    const label = (
+      input.name?.trim() ||
+      (!isRefine && !isBlender && !isHd ? rawPrompt : '') ||
+      'forge-model'
+    ).slice(0, 80);
+    const initialStage: JobStage = isRefine
+      ? 'repair_and_export'
+      : isBlender
+        ? 'mesh_generation'
+        : 'reference_image';
+
     const job: ForgeJobState = {
       jobId,
       status: 'running',
-      stage: 'reference_image',
+      stage: initialStage,
       name: label,
       targetMm,
       startedAt: Date.now(),
@@ -123,26 +142,59 @@ export function createJobManager(opts: JobManagerOptions) {
     // Launch asynchronously
     (async () => {
       try {
-        const res = await runPipeline({
-          comfyUrl: opts.comfyUrl,
-          prompt: input.prompt,
-          photoBase64: input.photoBase64,
-          targetMm,
-          name: label,
-          seed: input.seed ?? 731,
-          octreeResolution: input.octreeResolution ?? 320,
-          steps: input.steps ?? 30,
-          gridRes: input.gridRes ?? opts.gridRes ?? 260,
-          maxVerts: input.maxVerts ?? 44000,
-          smoothIterations: input.smoothIterations ?? 3,
-          smoothFactor: input.smoothFactor ?? 0.4,
-          aspectRatioTarget: input.aspectRatioTarget,
-          localOutDir: opts.localOutDir,
-          skipScp: opts.skipScp,
-          onStage: (stage) => {
-            job.stage = stage;
-          },
-        });
+        let res: ForgePipelineResult;
+        if (isRefine) {
+          const cfg = JSON.parse(rawPrompt.slice('__FORGE_REFINE__:'.length));
+          res = await runBlenderRefineOnAlienPc({
+            comfyUrl: opts.comfyUrl,
+            rawGlbFilename: cfg.rawGlbFilename,
+            name: label,
+            targetMm,
+            gridRes: cfg.gridRes ?? 320,
+            maxVerts: cfg.maxVerts ?? 45000,
+            smoothIterations: cfg.smoothIterations ?? 1,
+            smoothFactor: cfg.smoothFactor ?? 0.22,
+            aspectRatioTarget: cfg.aspectRatioTarget,
+            localOutDir: opts.localOutDir,
+            skipScp: opts.skipScp,
+          });
+        } else if (isBlender) {
+          const pyCode = input.photoBase64?.startsWith('__FORGE_BLENDER__:')
+            ? Buffer.from(input.photoBase64.slice('__FORGE_BLENDER__:'.length), 'base64').toString(
+                'utf8',
+              )
+            : rawPrompt.slice('__FORGE_BLENDER__:'.length);
+          res = await runBlenderScriptOnAlienPc({
+            comfyUrl: opts.comfyUrl,
+            pythonCode: pyCode,
+            name: label,
+            targetMm,
+            localOutDir: opts.localOutDir,
+            skipScp: opts.skipScp,
+          });
+        } else {
+          const hdCfg = isHd ? JSON.parse(rawPrompt.slice('__FORGE_HD__:'.length)) : null;
+          res = await runPipeline({
+            comfyUrl: opts.comfyUrl,
+            prompt: hdCfg ? hdCfg.prompt : input.prompt,
+            photoBase64: input.photoBase64,
+            targetMm,
+            name: label,
+            seed: input.seed ?? 731,
+            octreeResolution: hdCfg?.octreeResolution ?? input.octreeResolution ?? 320,
+            steps: hdCfg?.steps ?? input.steps ?? 30,
+            gridRes: hdCfg?.gridRes ?? input.gridRes ?? opts.gridRes ?? 260,
+            maxVerts: hdCfg?.maxVerts ?? input.maxVerts ?? 44000,
+            smoothIterations: hdCfg?.smoothIterations ?? input.smoothIterations ?? 3,
+            smoothFactor: hdCfg?.smoothFactor ?? input.smoothFactor ?? 0.4,
+            aspectRatioTarget: hdCfg?.aspectRatioTarget ?? input.aspectRatioTarget,
+            localOutDir: opts.localOutDir,
+            skipScp: opts.skipScp,
+            onStage: (stage) => {
+              job.stage = stage;
+            },
+          });
+        }
         job.status = 'done';
         job.stage = 'done';
         job.finishedAt = Date.now();

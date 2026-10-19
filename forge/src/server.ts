@@ -62,7 +62,7 @@ const json = (
 ) => send(res, status, JSON.stringify(obj), { 'Content-Type': 'application/json', ...headers });
 
 function buildMcp(cfg: ForgeConfig, jobs: JobManager): McpServer {
-  const FORGE_VERSION = '2.4.0';
+  const FORGE_VERSION = '2.5.0';
   const BLENDER_VERSION = '4.3.2';
   const server = new McpServer({ name: 'shapecast-forge', version: FORGE_VERSION });
   const result = (obj: Record<string, unknown>) => ({
@@ -441,6 +441,13 @@ export function createForgeServer(cfg: ForgeConfig): Server {
               `  mcp ${rpc} protocol=${req.headers['mcp-protocol-version'] ?? '-'} accept=${req.headers.accept ?? '-'} -> ${res.statusCode}`,
             );
         });
+        const proto = req.headers['mcp-protocol-version'];
+        if (
+          typeof proto === 'string' &&
+          !['2024-11-05', '2025-03-26', '2025-06-18'].includes(proto)
+        ) {
+          req.headers['mcp-protocol-version'] = '2025-06-18';
+        }
         const server = buildMcp(cfg, jobs);
         const transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: undefined,

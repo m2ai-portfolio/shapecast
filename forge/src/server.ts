@@ -62,7 +62,7 @@ const json = (
 ) => send(res, status, JSON.stringify(obj), { 'Content-Type': 'application/json', ...headers });
 
 function buildMcp(cfg: ForgeConfig, jobs: JobManager): McpServer {
-  const FORGE_VERSION = '2.6.0';
+  const FORGE_VERSION = '2.7.0';
   const BLENDER_VERSION = '4.3.2';
   const server = new McpServer({ name: 'shapecast-forge', version: FORGE_VERSION });
   const result = (obj: Record<string, unknown>) => ({
@@ -81,6 +81,7 @@ function buildMcp(cfg: ForgeConfig, jobs: JobManager): McpServer {
     async () => {
       const st = await comfyStatus(cfg.comfyUrl);
       const active = jobs.activeJob();
+      const lastDone = jobs.lastCompletedJob();
       if (active && st.alienpc === 'available') {
         return result({
           ...st,
@@ -88,6 +89,7 @@ function buildMcp(cfg: ForgeConfig, jobs: JobManager): McpServer {
           blender: BLENDER_VERSION,
           alienpc: 'busy',
           activeJob: { jobId: active.jobId, stage: active.stage, name: active.name },
+          lastJobId: lastDone?.jobId ?? null,
         });
       }
       return result({
@@ -95,6 +97,7 @@ function buildMcp(cfg: ForgeConfig, jobs: JobManager): McpServer {
         version: FORGE_VERSION,
         blender: BLENDER_VERSION,
         activeJob: active ? { jobId: active.jobId, stage: active.stage, name: active.name } : null,
+        lastJobId: lastDone?.jobId ?? null,
       });
     },
   );
@@ -381,6 +384,7 @@ export function createForgeServer(cfg: ForgeConfig): Server {
     comfyUrl: cfg.comfyUrl,
     localOutDir: cfg.localOutDir,
     skipScp: cfg.skipScp,
+    lastJobFile: cfg.stateFile ? join(dirname(cfg.stateFile), 'last-job.json') : null,
     runner: cfg.pipelineRunner,
   });
   return createServer(async (req, res) => {

@@ -3,6 +3,8 @@
  * Fails fast when a job is already running or when AlienPC is busy/unavailable.
  */
 import { randomBytes } from 'node:crypto';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 import {
   comfyStatus,
   runForgePipeline,
@@ -33,18 +35,38 @@ export interface JobManagerOptions {
   localOutDir?: string;
   skipScp?: boolean;
   gridRes?: number;
+  lastJobFile?: string | null;
   runner?: (opts: ForgePipelineOptions) => Promise<ForgePipelineResult>;
 }
 
 export function createJobManager(opts: JobManagerOptions) {
   const jobs = new Map<string, ForgeJobState>();
   let activeJobId: string | null = null;
+  let lastDoneJobId: string | null = null;
   const runPipeline = opts.runner ?? runForgePipeline;
+
+  if (opts.lastJobFile) {
+    try {
+      const saved = JSON.parse(readFileSync(opts.lastJobFile, 'utf8')) as ForgeJobState;
+      if (saved && saved.jobId && saved.status === 'done' && saved.result) {
+        jobs.set(saved.jobId, saved);
+        lastDoneJobId = saved.jobId;
+      }
+    } catch {
+      /* no cached job yet */
+    }
+  }
 
   function activeJob(): ForgeJobState | null {
     if (!activeJobId) return null;
     const j = jobs.get(activeJobId) ?? null;
     return j && j.status === 'running' ? j : null;
+  }
+
+  function lastCompletedJob(): ForgeJobState | null {
+    if (!lastDoneJobId) return null;
+    const j = jobs.get(lastDoneJobId) ?? null;
+    return j && j.status === 'done' ? j : null;
   }
 
   async function startJob(input: {
@@ -159,10 +181,10 @@ export function createJobManager(opts: JobManagerOptions) {
             rawGlbFilename: cfg.rawGlbFilename,
             name: label,
             targetMm,
-            gridRes: cfg.gridRes ?? 320,
-            maxVerts: cfg.maxVerts ?? 45000,
+            gridRes: cfg.gridRes ?? 360,
+            maxVerts: cfg.maxVerts ?? 46000,
             smoothIterations: cfg.smoothIterations ?? 1,
-            smoothFactor: cfg.smoothFactor ?? 0.22,
+            smoothFactor: cfg.smoothFactor ?? 0.18,
             aspectRatioTarget: cfg.aspectRatioTarget,
             localOutDir: opts.localOutDir,
             skipScp: opts.skipScp,
@@ -191,12 +213,12 @@ export function createJobManager(opts: JobManagerOptions) {
             targetMm,
             name: label,
             seed: input.seed ?? 731,
-            octreeResolution: hdCfg?.octreeResolution ?? input.octreeResolution ?? 320,
-            steps: hdCfg?.steps ?? input.steps ?? 30,
-            gridRes: hdCfg?.gridRes ?? input.gridRes ?? opts.gridRes ?? 260,
-            maxVerts: hdCfg?.maxVerts ?? input.maxVerts ?? 44000,
-            smoothIterations: hdCfg?.smoothIterations ?? input.smoothIterations ?? 3,
-            smoothFactor: hdCfg?.smoothFactor ?? input.smoothFactor ?? 0.4,
+            octreeResolution: hdCfg?.octreeResolution ?? input.octreeResolution ?? 352,
+            steps: hdCfg?.steps ?? input.steps ?? 32,
+            gridRes: hdCfg?.gridRes ?? input.gridRes ?? opts.gridRes ?? 340,
+            maxVerts: hdCfg?.maxVerts ?? input.maxVerts ?? 46000,
+            smoothIterations: hdCfg?.smoothIterations ?? input.smoothIterations ?? 1,
+            smoothFactor: hdCfg?.smoothFactor ?? input.smoothFactor ?? 0.2,
             aspectRatioTarget: hdCfg?.aspectRatioTarget ?? input.aspectRatioTarget,
             localOutDir: opts.localOutDir,
             skipScp: opts.skipScp,
@@ -209,6 +231,19 @@ export function createJobManager(opts: JobManagerOptions) {
         job.stage = 'done';
         job.finishedAt = Date.now();
         job.result = res;
+        lastDoneJobId = jobId;
+        if (opts.lastJobFile) {
+          try {
+            mkdirSync(dirname(opts.lastJobFile), { recursive: true });
+            const serializable = {
+              ...job,
+              result: { ...res, tris: undefined },
+            };
+            writeFileSync(opts.lastJobFile, JSON.stringify(serializable));
+          } catch {
+            /* ignore persistence error */
+          }
+        }
       } catch (e) {
         job.status = 'error';
         job.stage = 'error';
@@ -223,10 +258,11 @@ export function createJobManager(opts: JobManagerOptions) {
   }
 
   function getJob(jobId: string): ForgeJobState | null {
+    if (jobId === 'latest') return lastCompletedJob();
     return jobs.get(jobId) ?? null;
   }
 
-  return { startJob, getJob, activeJob };
+  return { startJob, getJob, activeJob, lastCompletedJob };
 }
 
 export type JobManager = ReturnType<typeof createJobManager>;

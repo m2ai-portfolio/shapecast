@@ -28,10 +28,13 @@ def parse_args():
         "output_glb": "",
         "output_stl": "",
         "target_mm": 120.0,
-        "grid_res": 260,
+        "grid_res": 340,
         "max_verts": 48000,
-        "smooth_iters": 3,
-        "smooth_factor": 0.4,
+        "smooth_iters": 1,
+        "smooth_factor": 0.22,
+        "sharpen_iters": 1,
+        "sharpen_factor": 0.28,
+        "planar_deg": 0.0,
         "aspect_target": "",
     }
     i = 0
@@ -60,6 +63,15 @@ def parse_args():
             i += 2
         elif a == "--smooth-factor" and i + 1 < len(argv):
             args["smooth_factor"] = float(argv[i + 1])
+            i += 2
+        elif a == "--sharpen-iters" and i + 1 < len(argv):
+            args["sharpen_iters"] = int(argv[i + 1])
+            i += 2
+        elif a == "--sharpen-factor" and i + 1 < len(argv):
+            args["sharpen_factor"] = float(argv[i + 1])
+            i += 2
+        elif a == "--planar-deg" and i + 1 < len(argv):
+            args["planar_deg"] = float(argv[i + 1])
             i += 2
         elif a == "--aspect-target" and i + 1 < len(argv):
             args["aspect_target"] = argv[i + 1]
@@ -132,6 +144,74 @@ def compute_quality_metrics(obj):
         "symmetry_score": symmetry_score,
         "aspect_ratio": [1.0, round(minor_h / major_h, 3), round(dz / major_h, 3)],
     }
+
+
+def sharpen_creases_bmesh(obj, iterations=2, strength=0.35):
+    """
+    3D Unsharp Mask / Crease Enhancer on the decimated mesh:
+    Sharpens ridges (rafters, roof eaves, window mullions) and deepens recessed grooves
+    while guaranteeing zero flipped triangles and 100% manifold topology.
+    """
+    import math
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    bm.verts.ensure_lookup_table()
+    bm.edges.ensure_lookup_table()
+    bm.faces.ensure_lookup_table()
+
+    for _ in range(max(1, min(5, int(iterations)))):
+        bm.normal_update()
+        deltas = {}
+        for v in bm.verts:
+            if not v.is_manifold or len(v.link_edges) < 3:
+                continue
+            # Check if vertex participates in at least one feature crease edge (>= 14 deg)
+            max_ang = 0.0
+            for e in v.link_edges:
+                if len(e.link_faces) == 2:
+                    try:
+                        ang = math.degrees(e.calc_face_angle())
+                        if ang > max_ang:
+                            max_ang = ang
+                    except ValueError:
+                        pass
+            if max_ang < 14.0:
+                continue
+
+            # Compute neighbor centroid
+            nb_sum = Vector((0.0, 0.0, 0.0))
+            for e in v.link_edges:
+                nb_sum += e.other_vert(v).co
+            nb_avg = nb_sum / float(len(v.link_edges))
+
+            # Unsharp displacement: push vertex away from local Laplacian average along normal component
+            lap = v.co - nb_avg
+            n = v.normal
+            proj = lap.dot(n) * n
+            # Weight by crease sharpness (stronger on 25-90 deg architectural edges)
+            w = min(1.0, (max_ang - 12.0) / 45.0) * float(strength)
+            deltas[v.index] = proj * w
+
+        # Apply deltas safely: revert any vertex whose move would invert or degenerate an adjacent face
+        for idx, delta in deltas.items():
+            v = bm.verts[idx]
+            old_co = v.co.copy()
+            old_normals = [f.normal.copy() for f in v.link_faces]
+            v.co = old_co + delta
+            valid = True
+            for f, old_n in zip(v.link_faces, old_normals):
+                f.normal_update()
+                if f.calc_area() < 1e-6 or f.normal.dot(old_n) < 0.35:
+                    valid = False
+                    break
+            if not valid:
+                v.co = old_co
+                for f in v.link_faces:
+                    f.normal_update()
+
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    bm.to_mesh(obj.data)
+    bm.free()
 
 
 def clean_non_manifold_bmesh(obj):
@@ -212,11 +292,11 @@ def main():
     obj.location = (-cx, -cy, -bmin[2])
     bpy.ops.object.transform_apply(location=True, rotation=False, scale=False)
 
-    # 1. High-resolution OpenVDB Voxel Remesh (default grid_res=260 -> ~0.45 mm voxels)
+    # 1. Ultra-fine OpenVDB Voxel Remesh (default grid_res=380 -> ~0.35 mm voxels)
     bmin, bmax = get_world_bbox(obj)
     max_span = max(bmax[0] - bmin[0], bmax[1] - bmin[1], bmax[2] - bmin[2], 10.0)
-    fine_res = max(180, min(380, int(args["grid_res"])))
-    voxel_size = max(0.22, max_span / float(fine_res))
+    fine_res = max(220, min(440, int(args["grid_res"])))
+    voxel_size = max(0.18, max_span / float(fine_res))
 
     remesh = obj.modifiers.new(name="ShapeCastVoxelRemesh", type="REMESH")
     remesh.mode = "VOXEL"
@@ -241,14 +321,31 @@ def main():
     main_obj.select_set(True)
     bpy.context.view_layer.objects.active = main_obj
 
-    # 3. Configurable Smooth (fewer iterations in crisp refinement mode preserves sharp body creases)
+    # 3a. Micro De-Staircase pass (removes sub-voxel stepping without rounding features)
     if args["smooth_iters"] > 0 and args["smooth_factor"] > 0:
         smooth = main_obj.modifiers.new(name="ShapeCastSmooth", type="SMOOTH")
-        smooth.factor = max(0.05, min(1.0, float(args["smooth_factor"])))
-        smooth.iterations = max(1, min(12, int(args["smooth_iters"])))
+        smooth.factor = max(0.05, min(0.5, float(args["smooth_factor"])))
+        smooth.iterations = max(1, min(4, int(args["smooth_iters"])))
         bpy.ops.object.modifier_apply(modifier=smooth.name)
 
-    # 4. Adaptive Decimate (Collapse) so vertex count <= max_verts (~48,000-60,000) for Uint16 packing
+    # 3b. 3D Unsharp Mask / Inverse Laplacian Crease Sharpening (restores crisp rafters, window mullions & ridges)
+    if args.get("sharpen_iters", 0) > 0 and args.get("sharpen_factor", 0) > 0:
+        sharpen = main_obj.modifiers.new(name="ShapeCastSharpen", type="SMOOTH")
+        sharpen.factor = -max(0.05, min(0.65, float(args["sharpen_factor"])))
+        sharpen.iterations = max(1, min(4, int(args["sharpen_iters"])))
+        bpy.ops.object.modifier_apply(modifier=sharpen.name)
+
+    # 4a. Planar Decimate on near-coplanar micro-faces so walls/rafters/trim form crisp flat facets like Meshy
+    if args.get("planar_deg", 0) > 0:
+        import math
+        planar = main_obj.modifiers.new(name="ShapeCastPlanar", type="DECIMATE")
+        planar.decimate_type = "DISSOLVE"
+        planar.angle_limit = math.radians(max(1.0, min(8.0, float(args["planar_deg"]))))
+        bpy.ops.object.modifier_apply(modifier=planar.name)
+        tri_pre = main_obj.modifiers.new(name="ShapeCastTriPre", type="TRIANGULATE")
+        bpy.ops.object.modifier_apply(modifier=tri_pre.name)
+
+    # 4b. Adaptive QEM Decimate (Collapse) so vertex count <= max_verts (~48,000) for Uint16 packing
     cur_verts = len(main_obj.data.vertices)
     max_v = max(15000, min(63000, int(args["max_verts"])))
     if cur_verts > max_v:
@@ -260,6 +357,14 @@ def main():
 
     tri = main_obj.modifiers.new(name="ShapeCastTriangulate", type="TRIANGULATE")
     bpy.ops.object.modifier_apply(modifier=tri.name)
+
+    # 5. Post-decimation 3D Unsharp Crease Enhancer on macro rafters, window frames & trim
+    if args.get("sharpen_iters", 0) > 0 and args.get("sharpen_factor", 0) > 0:
+        sharpen_creases_bmesh(
+            main_obj,
+            iterations=max(2, int(args["sharpen_iters"]) * 2),
+            strength=max(0.25, float(args["sharpen_factor"])),
+        )
 
     manifold_ok = clean_non_manifold_bmesh(main_obj)
 

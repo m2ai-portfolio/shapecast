@@ -84,8 +84,8 @@ export function buildHunyuanWorkflow(
   outputPrefix: string,
   seed = 731,
   {
-    octreeResolution = 320,
-    steps = 30,
+    octreeResolution = 352,
+    steps = 32,
     cfg = 5,
   }: { octreeResolution?: number; steps?: number; cfg?: number } = {},
 ) {
@@ -287,9 +287,9 @@ export async function runBlenderPostProcessOnAlienPc(
 ): Promise<{ ok: boolean; summary?: any }> {
   const inPath = `C:/Users/matth/ComfyUI/output/${subfolder ? `${subfolder}/` : ''}${inputFilename}`;
   const outPath = `C:/Users/matth/ComfyUI/output/shapecast/${outGlbFilename}`;
-  const maxVerts = Math.min(46000, extra.maxVerts ?? 44000);
-  const smoothIters = extra.smoothIterations ?? 3;
-  const smoothFactor = extra.smoothFactor ?? 0.4;
+  const maxVerts = Math.min(46000, extra.maxVerts ?? 46000);
+  const smoothIters = extra.smoothIterations ?? 1;
+  const smoothFactor = extra.smoothFactor ?? 0.2;
   const aspectArg =
     extra.aspectRatioTarget && extra.aspectRatioTarget.length === 3
       ? ` --aspect-target ${extra.aspectRatioTarget.map((n) => Number(n).toFixed(4)).join(',')}`
@@ -511,13 +511,13 @@ export async function runForgePipeline(opts: ForgePipelineOptions): Promise<Forg
     targetMm = 120,
     name,
     seed = 731,
-    gridRes = 260,
-    maxVerts = 44000,
-    smoothIterations = 3,
-    smoothFactor = 0.4,
+    gridRes = 340,
+    maxVerts = 46000,
+    smoothIterations = 1,
+    smoothFactor = 0.2,
     aspectRatioTarget,
-    octreeResolution = 320,
-    steps = 30,
+    octreeResolution = 352,
+    steps = 32,
     localOutDir,
     skipScp = false,
     pollMs = 1500,

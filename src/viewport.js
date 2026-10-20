@@ -5,6 +5,97 @@ const cssVar = (name, fallback) => {
   return v || fallback;
 };
 
+/**
+ * Compute crease-angle vertex normals on a non-indexed triangle position array:
+ * - Smoothly blends normals across micro-facets where dihedral angle < creaseDeg (28 deg)
+ * - Preserves razor-sharp hard edges on rafters, window frames, roof eaves & creases (>= 28 deg)
+ */
+function computeCreaseNormals(pos, cosCrease = 0.8829) {
+  const nTris = pos.length / 9;
+  const faceNormals = new Float32Array(nTris * 3);
+  const vertMap = new Map();
+
+  for (let t = 0; t < nTris; t++) {
+    const o = t * 9;
+    const ax = pos[o],
+      ay = pos[o + 1],
+      az = pos[o + 2];
+    const bx = pos[o + 3],
+      by = pos[o + 4],
+      bz = pos[o + 5];
+    const cx = pos[o + 6],
+      cy = pos[o + 7],
+      cz = pos[o + 8];
+    const ux = bx - ax,
+      uy = by - ay,
+      uz = bz - az;
+    const vx = cx - ax,
+      vy = cy - ay,
+      vz = cz - az;
+    let nx = uy * vz - uz * vy,
+      ny = uz * vx - ux * vz,
+      nz = ux * vy - uy * vx;
+    const len = Math.hypot(nx, ny, nz) || 1;
+    nx /= len;
+    ny /= len;
+    nz /= len;
+    const fn = t * 3;
+    faceNormals[fn] = nx;
+    faceNormals[fn + 1] = ny;
+    faceNormals[fn + 2] = nz;
+
+    for (let k = 0; k < 3; k++) {
+      const vo = o + k * 3;
+      const key = `${Math.round(pos[vo] * 200)},${Math.round(pos[vo + 1] * 200)},${Math.round(pos[vo + 2] * 200)}`;
+      let list = vertMap.get(key);
+      if (!list) {
+        list = [];
+        vertMap.set(key, list);
+      }
+      list.push(t);
+    }
+  }
+
+  const normals = new Float32Array(pos.length);
+  for (let t = 0; t < nTris; t++) {
+    const o = t * 9;
+    const fn = t * 3;
+    const tnx = faceNormals[fn],
+      tny = faceNormals[fn + 1],
+      tnz = faceNormals[fn + 2];
+    for (let k = 0; k < 3; k++) {
+      const vo = o + k * 3;
+      const key = `${Math.round(pos[vo] * 200)},${Math.round(pos[vo + 1] * 200)},${Math.round(pos[vo + 2] * 200)}`;
+      const adj = vertMap.get(key);
+      let sx = 0,
+        sy = 0,
+        sz = 0;
+      if (adj && adj.length > 1 && adj.length <= 24) {
+        for (let i = 0; i < adj.length; i++) {
+          const ofn = adj[i] * 3;
+          const onx = faceNormals[ofn],
+            ony = faceNormals[ofn + 1],
+            onz = faceNormals[ofn + 2];
+          if (tnx * onx + tny * ony + tnz * onz >= cosCrease) {
+            sx += onx;
+            sy += ony;
+            sz += onz;
+          }
+        }
+      } else {
+        sx = tnx;
+        sy = tny;
+        sz = tnz;
+      }
+      const sl = Math.hypot(sx, sy, sz) || 1;
+      normals[vo] = sx / sl;
+      normals[vo + 1] = sy / sl;
+      normals[vo + 2] = sz / sl;
+    }
+  }
+  return normals;
+}
+
 /** Three.js viewport with a true-size Saturn 3 plate. Returns null when THREE or WebGL is missing. */
 export function createViewport(canvas, { onSelect = (_id) => {} } = {}) {
   if (typeof THREE === 'undefined') return null;
@@ -28,10 +119,17 @@ export function createViewport(canvas, { onSelect = (_id) => {} } = {}) {
     phi = 1.05,
     dist = 420,
     needsRender = true;
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 0.9));
-  const sun = new THREE.DirectionalLight(0xffffff, 0.8);
-  sun.position.set(200, -300, 400);
-  scene.add(sun);
+  // High-contrast 3-point studio clay lighting (matching Meshy crisp crevice shading)
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x1e2024, 0.36));
+  const keyLight = new THREE.DirectionalLight(0xfffdf8, 1.32);
+  keyLight.position.set(220, -280, 390);
+  scene.add(keyLight);
+  const rimLight = new THREE.DirectionalLight(0xdce6ff, 0.55);
+  rimLight.position.set(-260, 250, 240);
+  scene.add(rimLight);
+  const fillLight = new THREE.DirectionalLight(0xffffff, 0.28);
+  fillLight.position.set(-220, -180, 110);
+  scene.add(fillLight);
 
   const [W, D, H] = SATURN3.build;
   const plateMat = new THREE.MeshBasicMaterial({
@@ -78,8 +176,9 @@ export function createViewport(canvas, { onSelect = (_id) => {} } = {}) {
     }
     for (const it of items) {
       const geo = new THREE.BufferGeometry();
-      geo.setAttribute('position', new THREE.BufferAttribute(Float32Array.from(it.tris), 3));
-      geo.computeVertexNormals();
+      const posArr = Float32Array.from(it.tris);
+      geo.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
+      geo.setAttribute('normal', new THREE.BufferAttribute(computeCreaseNormals(posArr), 3));
       const color = it.failed
         ? colors.failed
         : it.part.id === selectedId
@@ -87,7 +186,7 @@ export function createViewport(canvas, { onSelect = (_id) => {} } = {}) {
           : colors.base;
       const mesh = new THREE.Mesh(
         geo,
-        new THREE.MeshStandardMaterial({ color, roughness: 0.6, metalness: 0.05 }),
+        new THREE.MeshStandardMaterial({ color, roughness: 0.52, metalness: 0.04 }),
       );
       mesh.userData.id = it.part.id;
       group.add(mesh);

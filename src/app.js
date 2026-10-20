@@ -413,13 +413,39 @@ function addPhotos(files) {
 }
 
 // ---------- Mesh Forge (Hunyuan3D via MCP) ----------
-const UI_VERSION = '2.6';
+const UI_VERSION = '2.7';
 const STAGE_LABELS = {
   queued: 'Queued on AlienPC...',
   reference_image: '1/3 Step 0 Studio Prep (Gemini / ChatGPT / Flux)...',
   mesh_generation: '2/3 Sculpting 3D mesh (Hunyuan3D 2.1)...',
-  repair_and_export: '3/3 Blender 4.3 remesh & writing STL...',
+  repair_and_export: '3/3 Blender 4.3 crisp remesh & writing STL...',
 };
+
+function saveLastForgeMeta(jobId) {
+  try {
+    localStorage.setItem(
+      'shapecast.lastForgeMeta',
+      JSON.stringify({
+        jobId,
+        name: state.project?.name || '',
+        brief: state.project?.brief || '',
+        scaleRef: state.project?.scaleRef || '',
+        at: Date.now(),
+      }),
+    );
+  } catch {
+    /* ignore storage errors */
+  }
+}
+
+function loadLastForgeMeta() {
+  try {
+    const raw = localStorage.getItem('shapecast.lastForgeMeta');
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
 
 async function resolveFirstPhotoBlob() {
   const first = state.project.photos[0];
@@ -454,11 +480,11 @@ async function resolveFirstPhotoBlob() {
 async function refreshForgeStatus() {
   const badge = $('forgeBadge');
   const vBadge = $('versionBadge');
-  if (!badge) return;
+  if (!badge) return null;
   if (!caps.mcp) {
     badge.textContent = 'MCP unavailable';
     state.forgeReady = false;
-    return;
+    return null;
   }
   try {
     const r = await caps.mcp.callTool(FORGE_SERVER, 'forge_status', {}, { cache: false });
@@ -479,10 +505,55 @@ async function refreshForgeStatus() {
       badge.style.color = 'var(--red)';
       state.forgeReady = false;
     }
+    return st;
   } catch {
     badge.textContent = 'connector offline';
     badge.style.color = 'var(--muted)';
     state.forgeReady = false;
+    return null;
+  }
+}
+
+async function restoreLatestForgeMeshIfAvailable() {
+  if (!caps.mcp || state.forgeMesh || state.inference || state.mode === 'blocks') return;
+  try {
+    const meta = loadLastForgeMeta();
+    if (meta && state.project) {
+      if (!state.project.brief && meta.brief) state.project.brief = meta.brief;
+      if (!state.project.scaleRef && meta.scaleRef) state.project.scaleRef = meta.scaleRef;
+      if (state.project.name === SAMPLE_LIST.name && meta.name) state.project.name = meta.name;
+    }
+    const st = await refreshForgeStatus();
+    if (st?.activeJob?.jobId && !state.inference) {
+      const controller = new AbortController();
+      const token = tracker.token();
+      state.inference = { controller, token };
+      try {
+        setBusy(true, `Reconnecting to running job ${st.activeJob.name || st.activeJob.jobId}...`);
+        await pollForgeJobUntilDone(st.activeJob.jobId, controller);
+      } finally {
+        state.inference = null;
+        setBusy(false, '');
+      }
+      return;
+    }
+    const targetJobId = st?.lastJobId || meta?.jobId || 'latest';
+    const res = await caps.mcp.callTool(
+      FORGE_SERVER,
+      'forge_job',
+      { jobId: targetJobId },
+      { cache: false },
+    );
+    const job = res?.payload;
+    if (job?.ok && job?.status === 'done' && job?.preview) {
+      const tris = unpackForgePreview(job.preview);
+      state.forgeMesh = { ...job, tris };
+      if (job.name) state.project.name = String(job.name).slice(0, META.name);
+      render();
+      viewport?.fit(job.bbox);
+    }
+  } catch {
+    /* ignore if no prior job exists */
   }
 }
 
@@ -528,6 +599,8 @@ async function pollForgeJobUntilDone(jobId, controller) {
       const tris = unpackForgePreview(job.preview);
       state.forgeMesh = { ...job, tris };
       if (job.name) state.project.name = String(job.name).slice(0, META.name);
+      saveLastForgeMeta(job.jobId);
+      saveCtl?.markChanged();
       render();
       viewport?.fit(job.bbox);
       return job;
@@ -1403,6 +1476,14 @@ async function init() {
     $('localBanner').classList.remove('hidden');
     saveCtl?.dispose();
     saveCtl = makeSaveCtl(state.project);
+  }
+  if (caps.mcp) {
+    await restoreLatestForgeMeshIfAvailable();
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        restoreLatestForgeMeshIfAvailable();
+      }
+    });
   }
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

@@ -63,21 +63,41 @@ ${SCHEMA_TEXT}
 Reply with only the JSON object.`;
 }
 
-export function blenderPrompt({ brief, scaleRef }) {
-  return `You are a 3D CAD & Blender 4.3 Python (bpy) engineer building a single connected, watertight 3D mesh for an Elegoo Saturn 3 resin printer.
-Brief: ${brief && brief.trim() ? brief.trim() : '(none)'}
+export function blenderPrompt({
+  brief,
+  scaleRef,
+  previousCode = '',
+  userFeedback = '',
+  hasPhotos = false,
+  hasRenderView = false,
+}) {
+  const revisionBlock = previousCode
+    ? `\nExisting Blender 4.3 Python script to refine/upgrade:\n\`\`\`python\n${previousCode}\n\`\`\`\n${
+        userFeedback
+          ? `User Revision Request: ${userFeedback}`
+          : 'Critic & Detail Upgrade Request: Inspect the current CAD model (and 4-view render if attached) against the reference brief/photos. Add missing sub-assemblies, deeper recessed panel trenches, sharper concentric rings/nozzles, cooling louver slats, and fine hard-surface greeble arrays.'
+      }\n`
+    : '';
+  return `You are a Principal Hard-Surface CAD & Blender 4.3 Python (bpy/bmesh) Engineer designing a high-precision, razor-sharp 3D print model for an Elegoo Saturn 3 (12K) resin printer.
+Brief: ${brief && brief.trim() ? brief.trim() : '(from uploaded reference photo)'}
 Scale reference: ${scaleRef && scaleRef.trim() ? scaleRef.trim() : '120 mm longest horizontal dimension'}
+Visual Inputs: ${hasPhotos ? 'Reference photo(s) attached—match its exact silhouette, layout, proportions, and mechanical details. ' : ''}${hasRenderView ? '4-view render of the current mesh attached.' : ''}${revisionBlock}
 
-Write a self-contained Blender 4.3 Python script in "pythonCode" that builds the requested 3D object using bpy.ops.meshprimitives, bmesh, modifiers (SUBSURF, BEVEL, BOOLEAN, SOLIDIFY), or procedural geometry.
-Rules for pythonCode:
-- Do NOT call bpy.ops.wm.read_factory_settings or export functions (the runner clears the scene before your code and exports all MESH objects after).
-- Make sure all parts overlap so they form a single connected solid when voxel-remeshed.
-- Use Z as up, units in millimetres.
+CRITICAL CAD ARCHITECTURE RULES (NO VOXEL REMESHING):
+- Your mesh will be exported as EXACT mathematical CAD geometry (ZERO voxel remeshing, ZERO smoothing). Every edge, bevel, cylinder ring, louver slat, and greeble box you create is preserved with 0.00 mm CAD precision in the final STL!
+- Write a self-contained Blender 4.3 Python script in "pythonCode" using \`bpy\`, \`bmesh\`, and \`mathutils\`.
+- Do NOT call \`bpy.ops.wm.read_factory_settings\` or export functions (the runner clears the scene before your script and exports all MESH objects after).
+- Use Z as up, units in millimetres, centered around X=0, Y=0, with the base grounded at Z=0.
+- Build rich, multi-tiered hard-surface detail (aim for 40 to 250+ crisp geometric sub-parts using loops and helper functions):
+  1. Primary Structural Hull / Frame: Use exact polygonal profiles (\`bmesh\` extrusion or \`primitive_cube_add\`) with raised perimeter rims, recessed inner bays, and angled armor plates.
+  2. Cylindrical & Concentric Assemblies (thrusters, wheels, barrels, lenses): Always use \`vertices=64\` on cylinders/cones. Build multi-stage concentric rings (outer shroud, stepped inner collar, deep recessed bore, radial turbine vanes/struts around the circumference).
+  3. Panel Trenches, Cooling Louvers & Greeble Arrays: Use Python \`for\` loops and symmetry (\`for sx in (-1, 1):\`) to populate recessed panel plates, arrays of angled louver vents/slats, piping conduits, and raised micro-greeble blocks (0.8–3.0 mm relief depth so they print crisply on a 12K resin printer).
+  4. Overlap all sub-parts by at least 0.4 mm into their parent surface so they slice as a solid assembly in Chitubox.
 
 Return ONLY a JSON object with this schema:
 {
   "name": string (1-60 chars),
-  "pythonCode": string (valid Blender 4.3 Python script using bpy/bmesh/mathutils)
+  "pythonCode": string (valid, self-contained Blender 4.3 Python script using bpy/bmesh/mathutils)
 }`;
 }
 

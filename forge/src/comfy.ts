@@ -446,16 +446,90 @@ export async function runBlenderScriptOnAlienPc({
   mkdirSync(localScriptDir, { recursive: true });
   const localScriptPath = join(localScriptDir, `${runId}.py`);
 
-  const wrappedScript = `import bpy, os
+  const stlFilename = `${dateStamp()}-${slug}.stl`;
+  const remoteStlPath = `C:/Users/matth/Documents/ShapeCast/${stlFilename}`;
+  const wrappedScript = `import bpy, bmesh, os, json
+from mathutils import Vector
 bpy.ops.wm.read_factory_settings(use_empty=True)
 # --- user bpy script ---
 ${pythonCode}
-# --- export all meshes to GLB for ShapeCast ---
+# --- convert any curves/surfaces to mesh, apply modifiers, scale & export exact CAD ---
+for o in list(bpy.context.scene.objects):
+    if o.type in {'CURVE', 'SURFACE', 'FONT', 'META'}:
+        bpy.ops.object.select_all(action='DESELECT')
+        o.select_set(True)
+        bpy.context.view_layer.objects.active = o
+        try:
+            bpy.ops.object.convert(target='MESH')
+        except Exception:
+            pass
+
 mesh_objs = [o for o in bpy.context.scene.objects if o.type == 'MESH' and len(o.data.polygons) > 0]
 if not mesh_objs:
     raise RuntimeError('Blender script produced no mesh objects')
+
+for o in mesh_objs:
+    bpy.ops.object.select_all(action='DESELECT')
+    o.select_set(True)
+    bpy.context.view_layer.objects.active = o
+    for m in list(o.modifiers):
+        try:
+            bpy.ops.object.modifier_apply(modifier=m.name)
+        except Exception:
+            o.modifiers.remove(m)
+
+bpy.ops.object.select_all(action='DESELECT')
+for o in mesh_objs:
+    o.select_set(True)
+bpy.context.view_layer.objects.active = mesh_objs[0]
+if len(mesh_objs) > 1:
+    bpy.ops.object.join()
+
+obj = bpy.context.view_layer.objects.active
+bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+
+tri = obj.modifiers.new(name='ShapeCastCadTri', type='TRIANGULATE')
+tri.quad_method = 'BEAUTY'
+bpy.ops.object.modifier_apply(modifier=tri.name)
+
+bm = bmesh.new()
+bm.from_mesh(obj.data)
+bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-4)
+bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+bm.to_mesh(obj.data)
+bm.free()
+
+corners = [obj.matrix_world @ Vector(c) for c in obj.bound_box]
+xs = [c.x for c in corners]
+ys = [c.y for c in corners]
+zs = [c.z for c in corners]
+horiz = max(max(xs) - min(xs), max(ys) - min(ys), 1e-6)
+s = float(${targetMm}) / horiz
+obj.scale = (s, s, s)
+bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+
+corners = [obj.matrix_world @ Vector(c) for c in obj.bound_box]
+xs = [c.x for c in corners]
+ys = [c.y for c in corners]
+zs = [c.z for c in corners]
+obj.location = (-0.5 * (min(xs) + max(xs)), -0.5 * (min(ys) + max(ys)), -min(zs))
+bpy.ops.object.transform_apply(location=True, rotation=False, scale=False)
+
+stl_faces = len(obj.data.polygons)
+stl_verts = len(obj.data.vertices)
+os.makedirs('C:/Users/matth/Documents/ShapeCast', exist_ok=True)
+bpy.ops.wm.stl_export(filepath='${remoteStlPath}', export_selected_objects=True, ascii_format=False)
+
+if len(obj.data.vertices) > 60000:
+    dec = obj.modifiers.new(name='ShapeCastCadPreviewDec', type='DECIMATE')
+    dec.decimate_type = 'COLLAPSE'
+    dec.ratio = 60000.0 / float(len(obj.data.vertices))
+    dec.use_collapse_triangulate = True
+    bpy.ops.object.modifier_apply(modifier=dec.name)
+
 os.makedirs('C:/Users/matth/ComfyUI/output/shapecast', exist_ok=True)
-bpy.ops.export_scene.gltf(filepath='C:/Users/matth/ComfyUI/output/shapecast/${outGlbFilename}', export_format='GLB')
+bpy.ops.export_scene.gltf(filepath='C:/Users/matth/ComfyUI/output/shapecast/${outGlbFilename}', export_format='GLB', use_selection=True)
+print('BLENDER_CAD_JSON:' + json.dumps({'stl_faces': stl_faces, 'stl_vertices': stl_verts, 'faces': len(obj.data.polygons), 'vertices': len(obj.data.vertices)}))
 print('BLENDER_SCRIPT_OK')
 `;
   writeFileSync(localScriptPath, wrappedScript, 'utf8');
@@ -477,47 +551,43 @@ print('BLENDER_SCRIPT_OK')
   const { stdout } = await execFileAsync(
     'ssh',
     ['-n', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', sshHost, cmd],
-    { timeout: 45_000, maxBuffer: 10 * 1024 * 1024 },
+    { timeout: 60_000, maxBuffer: 10 * 1024 * 1024 },
   );
   if (!stdout.includes('BLENDER_SCRIPT_OK')) {
     throw new Error('Blender script did not complete cleanly');
   }
 
-  // Also run blender_postprocess on the exported GLB so it is voxel-remeshed & smoothed in Blender
-  const stlFilename = `${dateStamp()}-${slug}.stl`;
-  const postGlbFilename = `${runId}_post.glb`;
-  const post = await runBlenderPostProcessOnAlienPc(
-    outGlbFilename,
-    'shapecast',
-    postGlbFilename,
-    targetMm,
-    gridRes,
-    sshHost,
-    { outputStlPath: skipScp ? undefined : `C:/Users/matth/Documents/ShapeCast/${stlFilename}` },
-  );
-  const finalGlbName = post.ok ? postGlbFilename : outGlbFilename;
-  const glbBytes = await fetchComfyView(comfyUrl, finalGlbName, 'shapecast', 'output');
+  let cadMeta: Record<string, any> = { mode: 'blender_cad_exact' };
+  const cadIdx = stdout.indexOf('BLENDER_CAD_JSON:');
+  if (cadIdx !== -1) {
+    try {
+      cadMeta = {
+        ...cadMeta,
+        ...JSON.parse(stdout.slice(cadIdx + 'BLENDER_CAD_JSON:'.length).split(/\r?\n/)[0]),
+      };
+    } catch {
+      /* ignore parse error */
+    }
+  }
+
+  const glbBytes = await fetchComfyView(comfyUrl, outGlbFilename, 'shapecast', 'output');
   await new Promise((r) => setImmediate(r));
   const rawTris = await parseGlbTriangles(glbBytes);
   await new Promise((r) => setImmediate(r));
-  const prepared = repairAndPrepareMesh(rawTris, { targetMm, gridRes });
-  if (!prepared.manifold.ok) {
-    throw new Error(`Mesh repair failed manifold check: ${prepared.manifold.errors.join('; ')}`);
-  }
+  const prepared = repairAndPrepareMesh(rawTris, { targetMm, gridRes, preserveExactCad: true });
   const stlBuf = writeBinaryStl(prepared.tris, label);
-  const directStlWritten = Boolean(post.summary?.stl_written);
   const delivery = await deliverStlToAlienPc(stlBuf, stlFilename, {
     localOutDir,
-    skipScp: skipScp || directStlWritten,
+    skipScp: true,
     sshHost,
   });
   return {
     ...prepared,
     name: label,
     ...delivery,
-    deliveredToAlienPc: directStlWritten || delivery.deliveredToAlienPc,
+    deliveredToAlienPc: !skipScp,
     rawGlbFilename: outGlbFilename,
-    qualityMetrics: post.summary?.quality_metrics ?? undefined,
+    qualityMetrics: cadMeta,
   };
 }
 

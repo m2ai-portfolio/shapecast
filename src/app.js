@@ -35,6 +35,7 @@ const state = {
   mode: 'forge',
   forgeReady: false,
   forgeMesh: null,
+  lastBlenderCode: null,
   project: null,
   unsavedRevisions: [],
   items: [],
@@ -418,7 +419,7 @@ function addPhotos(files) {
 }
 
 // ---------- Mesh Forge (Hunyuan3D via MCP) ----------
-const UI_VERSION = '2.9';
+const UI_VERSION = '3.0';
 const STAGE_LABELS = {
   queued: 'Queued on AlienPC...',
   reference_image: '1/3 Step 0 Studio Prep (Gemini / ChatGPT / Flux)...',
@@ -933,7 +934,7 @@ async function runForgeGenerate() {
   }
 }
 
-async function runBlenderGenerate() {
+async function runBlenderGenerate(userFeedback = '') {
   if (!caps.mcp || !caps.sample || state.inference) return;
   metaChange();
   const controller = new AbortController();
@@ -942,21 +943,64 @@ async function runBlenderGenerate() {
   showError('');
 
   const brief = state.project.brief.trim();
-  if (!brief) {
-    showError('Write a brief describing the 3D object to build in Blender.');
+  const hasPhotoFiles = state.project.photos.some((p) => p.file);
+  if (!brief && !hasPhotoFiles && !userFeedback) {
+    showError('Write a brief or attach a reference photo to build in Blender 3D.');
     state.inference = null;
     setBusy(false, '');
     return;
   }
 
+  const isRevision = Boolean((userFeedback || !brief) && state.lastBlenderCode);
   const targetMm = parseScaleRefMm(state.project.scaleRef, 120);
   try {
-    setBusy(true, '1/2 Claude writing Blender 4.3 Python (bpy) script...');
-    addChat('user', `Blender 3D (${targetMm} mm): ${brief}`);
+    let blenderImages = [];
+    let hasPhotos = false;
+    let hasRenderView = false;
+    if (imageLimits) {
+      const filesToSend = [];
+      for (const p of state.project.photos) {
+        if (p.file) {
+          filesToSend.push(p.file);
+          hasPhotos = true;
+        }
+      }
+      if (isRevision && viewport?.captureFourViews && state.forgeMesh?.bbox) {
+        const viewFile = await viewport.captureFourViews(state.forgeMesh.bbox);
+        if (viewFile) {
+          filesToSend.push(viewFile);
+          hasRenderView = true;
+        }
+      }
+      if (filesToSend.length) {
+        blenderImages = prepareImages(filesToSend, imageLimits).images;
+      }
+    }
+
+    setBusy(
+      true,
+      isRevision
+        ? '1/2 Claude refining Blender 4.3 CAD Python (bpy) script...'
+        : '1/2 Claude writing razor-sharp Blender 4.3 CAD Python (bpy) script...',
+    );
+    addChat(
+      'user',
+      isRevision
+        ? `Refine Blender 3D CAD: ${userFeedback || 'Add finer hard-surface details & greebles'}`
+        : `Blender 3D CAD (${targetMm} mm): ${brief || '(from reference photo)'}${hasPhotos ? ' [+photo]' : ''}`,
+    );
     const reply = await caps.sample.json(
-      blenderPrompt({ brief, scaleRef: state.project.scaleRef }),
+      blenderPrompt({
+        brief,
+        scaleRef: state.project.scaleRef,
+        previousCode: isRevision ? state.lastBlenderCode : '',
+        userFeedback,
+        hasPhotos,
+        hasRenderView,
+      }),
       {
         signal: controller.signal,
+        images: blenderImages.length ? blenderImages : undefined,
         modelTier: 'complex',
         cache: false,
         onText: ({ text }) => {
@@ -968,8 +1012,12 @@ async function runBlenderGenerate() {
       showError('Claude did not return a valid Blender Python script.');
       return;
     }
-    setBusy(true, '2/2 Running headless Blender 4.3 + Voxel Remesh on AlienPC...');
+    state.lastBlenderCode = reply.pythonCode;
+    setBusy(true, '2/2 Running headless Blender 4.3 Exact CAD export on AlienPC...');
     const codeB64 = btoa(unescape(encodeURIComponent(reply.pythonCode)));
+    const modelName = reply.name || brief.slice(0, 60) || 'blender-cad-model';
+    state.project.name = modelName.slice(0, META.name);
+    $('projectName').value = state.project.name;
     const startRes = await caps.mcp.callTool(
       FORGE_SERVER,
       'forge_generate',
@@ -977,7 +1025,7 @@ async function runBlenderGenerate() {
         prompt: '__FORGE_BLENDER__:bpy',
         photoBase64: '__FORGE_BLENDER__:' + codeB64,
         targetMm,
-        name: reply.name || brief.slice(0, 60) || 'blender-model',
+        name: modelName,
       },
       { cache: false },
     );
@@ -989,7 +1037,7 @@ async function runBlenderGenerate() {
     if (!out) return;
     addChat(
       'claude',
-      `Blender 4.3 mesh ready: ${out.triangleCount.toLocaleString()} watertight triangles (${out.bbox.size.map((x) => x.toFixed(1)).join(' x ')} mm). Written to AlienPC: ${out.stlPath}`,
+      `Blender 4.3 Exact CAD ready: ${(out.qualityMetrics?.stl_faces || out.triangleCount).toLocaleString()} razor-sharp CAD triangles (${out.bbox.size.map((x) => x.toFixed(1)).join(' x ')} mm). Written to AlienPC: ${out.stlPath}`,
     );
   } catch (e) {
     if (!controller.signal.aborted) {
@@ -1363,13 +1411,19 @@ async function init() {
         ? runBlenderGenerate()
         : runInference('build'),
   );
-  $('refineBtn')?.addEventListener('click', () => runCriticRefineLoop(''));
+  $('refineBtn')?.addEventListener('click', () =>
+    state.mode === 'blender'
+      ? runBlenderGenerate('Inspect current CAD mesh and add finer hard-surface details & greebles')
+      : runCriticRefineLoop(''),
+  );
   $('sendBtn').addEventListener('click', () => {
     const box = /** @type {HTMLInputElement} */ ($('chatInput'));
     const t = box.value.trim();
     if (!t) return;
     box.value = '';
-    if (state.forgeMesh || state.mode === 'forge') {
+    if (state.mode === 'blender') {
+      runBlenderGenerate(t);
+    } else if (state.forgeMesh || state.mode === 'forge') {
       runCriticRefineLoop(t);
     } else {
       runInference('edit', t);

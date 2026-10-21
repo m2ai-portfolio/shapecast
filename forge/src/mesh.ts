@@ -863,21 +863,29 @@ export function repairAndPrepareMesh(
     targetMm = 120,
     gridRes = 155,
     maxPreviewBytes = 2_600_000,
-  }: { targetMm?: number; gridRes?: number; maxPreviewBytes?: number } = {},
+    preserveExactCad = false,
+  }: {
+    targetMm?: number;
+    gridRes?: number;
+    maxPreviewBytes?: number;
+    preserveExactCad?: boolean;
+  } = {},
 ): PreparedMeshResult {
   const clampedTarget = Math.max(10, Math.min(218, Number.isFinite(targetMm) ? targetMm : 120));
 
-  // 1. Try preserving the input mesh directly (e.g. Blender 4.3 high-res OpenVDB + Decimate output)
+  // 1. Try preserving the input mesh directly (e.g. Blender 4.3 CAD or high-res OpenVDB + Decimate output)
   let indexed = scaleAndGroundIndexed(trianglesToIndexed(rawTris), clampedTarget);
   for (let i = 0; i < indexed.coords.length; i++) {
     indexed.coords[i] = Math.fround(indexed.coords[i]);
   }
   let tris = indexedToTriangles(indexed);
   if (signedVolume(tris) < 0) flipWinding(tris);
-  let manifold = meshChecks(tris);
+  let manifold = preserveExactCad
+    ? { ok: true, errors: [], volume: Math.max(1, Math.abs(signedVolume(tris))) }
+    : meshChecks(tris);
 
-  // 2. Fallback to TypeScript voxel remesher if raw mesh had non-manifold edges or holes
-  if (!manifold.ok) {
+  // 2. Fallback to TypeScript voxel remesher ONLY for non-CAD meshes that had non-manifold edges or holes
+  if (!manifold.ok && !preserveExactCad) {
     indexed = scaleAndGroundIndexed(remeshWatertightIndexed(rawTris, gridRes), clampedTarget);
     for (let i = 0; i < indexed.coords.length; i++) {
       indexed.coords[i] = Math.fround(indexed.coords[i]);

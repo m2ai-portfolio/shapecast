@@ -62,7 +62,7 @@ const json = (
 ) => send(res, status, JSON.stringify(obj), { 'Content-Type': 'application/json', ...headers });
 
 function buildMcp(cfg: ForgeConfig, jobs: JobManager): McpServer {
-  const FORGE_VERSION = '2.9.0';
+  const FORGE_VERSION = '3.0.0';
   const BLENDER_VERSION = '4.3.2';
   const server = new McpServer({ name: 'shapecast-forge', version: FORGE_VERSION });
   const result = (obj: Record<string, unknown>) => ({

@@ -1,12 +1,15 @@
 /**
  * Server-side Blender 4.3 CAD Python (bpy/bmesh) Architect for ShapeCast Forge.
- * Runs directly on ProBook using Claude Sonnet 5.5 (OpenRouter), GPT-6.1-Sol (OpenAI),
- * or Gemini 3.8 Flash (Google) with 12,000 output tokens—eliminating the Claude.ai
- * browser artifact iframe's sample.json token limit ("Claude returned no text for this prompt")
- * and automatically self-healing any Blender 4.3 Python runtime errors on AlienPC.
+ * Uses Matthew's OAuth subscriptions directly on ProBook:
+ *   1. Claude Sonnet 5.5 (`claude -p --model claude-sonnet-5-5`, via ~/.claude/.credentials.json OAuth)
+ *   2. GPT-6.1-Sol (`codex exec -m gpt-6.1-sol`, via ~/.codex/auth.json ChatGPT OAuth, with native `-i` image support)
+ *   3. Gemini 3.8 Flash (`gemini-3.8-flash`, fallback)
+ * Explicitly strips ANTHROPIC_API_KEY, OPENAI_API_KEY, and OPENROUTER_API_KEY when invoking
+ * the Claude and Codex CLIs so requests are 100% covered by OAuth subscriptions ($0 API cost).
  */
-import { existsSync, readFileSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { spawn } from 'node:child_process';
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 let envLoaded = false;
@@ -142,89 +145,119 @@ function cleanBase64Jpeg(photoBase64?: string): string | null {
   return trimmed.includes(',') ? trimmed.split(',')[1] : trimmed;
 }
 
-async function callOpenRouterClaude(
-  prompt: string,
-  b64Image: string | null,
-  apiKey: string,
+function runOAuthSubprocess(
+  binPath: string,
+  args: string[],
+  stdinText: string,
   timeoutMs: number,
-  maxTokens = 8192,
-): Promise<BlenderCadGenResult> {
-  const content: any[] = [];
-  if (b64Image) {
-    content.push({
-      type: 'image_url',
-      image_url: { url: `data:image/jpeg;base64,${b64Image}` },
-    });
-  }
-  content.push({ type: 'text', text: prompt });
+): Promise<{ code: number | null; stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const env: NodeJS.ProcessEnv = { ...process.env };
+    // Explicitly strip paid API keys so Claude and Codex CLIs strictly use OAuth subscriptions
+    delete env.ANTHROPIC_API_KEY;
+    delete env.OPENAI_API_KEY;
+    delete env.OPENROUTER_API_KEY;
 
-  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: 'anthropic/claude-sonnet-5.5',
-      max_tokens: maxTokens,
-      temperature: 0.2,
-      messages: [{ role: 'user', content }],
-    }),
-    signal: AbortSignal.timeout(timeoutMs),
-  });
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '');
-    const affordMatch = errText.match(/can only afford\s+(\d+)/i);
-    if (res.status === 402 && affordMatch && maxTokens > 3500) {
-      const affordable = Math.min(8192, Math.max(0, Number(affordMatch[1]) - 100));
-      if (affordable >= 3500) {
-        return callOpenRouterClaude(prompt, b64Image, apiKey, timeoutMs, affordable);
-      }
+    const child = spawn(binPath, args, {
+      env,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      reject(new Error(`${binPath} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    child.stdout.on('data', (d) => (stdout += d.toString()));
+    child.stderr.on('data', (d) => (stderr += d.toString()));
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      resolve({ code, stdout, stderr });
+    });
+
+    if (stdinText) {
+      child.stdin.write(stdinText);
     }
-    throw new Error(`OpenRouter claude-sonnet-5.5 HTTP ${res.status}: ${errText.slice(0, 200)}`);
-  }
-  const data = (await res.json()) as any;
-  const raw = data?.choices?.[0]?.message?.content ?? '';
-  const parsed = extractBlenderScript(raw);
-  return { ...parsed, provider: 'claude-sonnet-5.5' };
+    child.stdin.end();
+  });
 }
 
-async function callOpenAiGpt6Sol(
+async function callClaudeOAuthSonnet55(
   prompt: string,
-  b64Image: string | null,
-  apiKey: string,
+  tempImagePath: string | null,
   timeoutMs: number,
 ): Promise<BlenderCadGenResult> {
-  const content: any[] = [];
-  if (b64Image) {
-    content.push({
-      type: 'image_url',
-      image_url: { url: `data:image/jpeg;base64,${b64Image}` },
-    });
+  const claudeBin = existsSync('/home/apexaipc/.local/bin/claude')
+    ? '/home/apexaipc/.local/bin/claude'
+    : 'claude';
+  const args = [
+    '-p',
+    '--model',
+    'claude-sonnet-5-5',
+    '--setting-sources',
+    '',
+    '--no-session-persistence',
+  ];
+  let fullPrompt = prompt;
+  if (tempImagePath) {
+    args.push('--tools', 'Read', '--add-dir', dirnameOrTmp(tempImagePath));
+    fullPrompt = `First, use the Read tool to view the attached reference image at ${tempImagePath}.\n\n${prompt}`;
+  } else {
+    args.push('--tools', '');
   }
-  content.push({ type: 'text', text: prompt });
 
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: 'gpt-6.1-sol',
-      max_completion_tokens: 12000,
-      messages: [{ role: 'user', content }],
-    }),
-    signal: AbortSignal.timeout(timeoutMs),
-  });
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '');
-    throw new Error(`OpenAI gpt-6.1-sol HTTP ${res.status}: ${errText.slice(0, 200)}`);
+  const { code, stdout, stderr } = await runOAuthSubprocess(
+    claudeBin,
+    args,
+    fullPrompt,
+    timeoutMs,
+  );
+  if (code !== 0 && !stdout.trim()) {
+    throw new Error(`Claude OAuth CLI exited ${code}: ${stderr.slice(0, 240)}`);
   }
-  const data = (await res.json()) as any;
-  const raw = data?.choices?.[0]?.message?.content ?? '';
-  const parsed = extractBlenderScript(raw);
-  return { ...parsed, provider: 'gpt-6.1-sol' };
+  const parsed = extractBlenderScript(stdout);
+  return { ...parsed, provider: 'claude-sonnet-5.5-oauth' };
+}
+
+function dirnameOrTmp(filePath: string): string {
+  const idx = filePath.lastIndexOf('/');
+  return idx > 0 ? filePath.slice(0, idx) : '/tmp';
+}
+
+async function callCodexOAuthGpt61Sol(
+  prompt: string,
+  tempImagePath: string | null,
+  timeoutMs: number,
+): Promise<BlenderCadGenResult> {
+  const codexBin = existsSync('/home/apexaipc/.local/bin/codex')
+    ? '/home/apexaipc/.local/bin/codex'
+    : 'codex';
+  const args = [
+    'exec',
+    '--skip-git-repo-check',
+    '-m',
+    'gpt-6.1-sol',
+    '-c',
+    'model_reasoning_effort="low"',
+    '-c',
+    'mcp_servers={}',
+  ];
+  if (tempImagePath) {
+    args.push('-i', tempImagePath);
+  }
+  args.push('-');
+
+  const { code, stdout, stderr } = await runOAuthSubprocess(codexBin, args, prompt, timeoutMs);
+  if (code !== 0 && !stdout.trim()) {
+    throw new Error(`Codex OAuth CLI exited ${code}: ${stderr.slice(0, 240)}`);
+  }
+  const parsed = extractBlenderScript(stdout);
+  return { ...parsed, provider: 'gpt-6.1-sol-oauth' };
 }
 
 async function callGemini38Flash(
@@ -275,45 +308,54 @@ export async function generateBlenderCadScript(
   ensureForgeEnvLoaded();
   const prompt = buildServerBlenderPrompt(opts);
   const b64Image = cleanBase64Jpeg(opts.photoBase64);
-  const timeoutMs = opts.timeoutMs ?? 60_000;
+  const timeoutMs = opts.timeoutMs ?? 90_000;
   const fallbackName = (opts.brief?.trim() || 'blender-cad-model').slice(0, 50);
 
+  let tempImagePath: string | null = null;
+  if (b64Image) {
+    tempImagePath = join(tmpdir(), `sc_cad_ref_${Date.now()}.jpg`).replace(/\\/g, '/');
+    writeFileSync(tempImagePath, Buffer.from(b64Image, 'base64'));
+  }
+
   const errors: string[] = [];
-
-  // 1. Primary: Claude Sonnet 5.5 via OpenRouter (8,192 output tokens, zero iframe cap)
-  const openRouterKey = process.env.OPENROUTER_API_KEY;
-  if (openRouterKey) {
+  try {
+    // 1. Primary: Claude Sonnet 5.5 via Claude Code OAuth Subscription ($0 API cost)
     try {
-      const r = await callOpenRouterClaude(prompt, b64Image, openRouterKey, timeoutMs);
+      const r = await callClaudeOAuthSonnet55(prompt, tempImagePath, timeoutMs);
       return { ...r, name: r.name === 'blender-cad-model' ? fallbackName : r.name };
     } catch (e) {
       errors.push((e as Error).message);
     }
-  }
 
-  // 2. Fallback 1: OpenAI GPT-6.1-Sol (12,000 output tokens, multimodal)
-  const openAiKey = process.env.OPENAI_API_KEY;
-  if (openAiKey) {
+    // 2. Fallback 1: GPT-6.1-Sol via OpenAI Codex OAuth Subscription ($0 API cost)
     try {
-      const r = await callOpenAiGpt6Sol(prompt, b64Image, openAiKey, timeoutMs);
+      const r = await callCodexOAuthGpt61Sol(prompt, tempImagePath, timeoutMs);
       return { ...r, name: r.name === 'blender-cad-model' ? fallbackName : r.name };
     } catch (e) {
       errors.push((e as Error).message);
     }
-  }
 
-  // 3. Fallback 2: Google Gemini 3.8 Flash (12,000 output tokens, multimodal)
-  const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-  if (geminiKey) {
-    try {
-      const r = await callGemini38Flash(prompt, b64Image, geminiKey, timeoutMs);
-      return { ...r, name: r.name === 'blender-cad-model' ? fallbackName : r.name };
-    } catch (e) {
-      errors.push((e as Error).message);
+    // 3. Fallback 2: Google Gemini 3.8 Flash
+    const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+    if (geminiKey) {
+      try {
+        const r = await callGemini38Flash(prompt, b64Image, geminiKey, timeoutMs);
+        return { ...r, name: r.name === 'blender-cad-model' ? fallbackName : r.name };
+      } catch (e) {
+        errors.push((e as Error).message);
+      }
+    }
+
+    throw new Error(
+      `Server-side Blender CAD generation failed: ${errors.join(' | ') || 'no providers available'}`,
+    );
+  } finally {
+    if (tempImagePath) {
+      try {
+        unlinkSync(tempImagePath);
+      } catch {
+        /* ignore */
+      }
     }
   }
-
-  throw new Error(
-    `Server-side Blender CAD generation failed: ${errors.join(' | ') || 'no API keys configured'}`,
-  );
 }

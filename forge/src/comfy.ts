@@ -84,19 +84,20 @@ export function buildHunyuanWorkflow(
   outputPrefix: string,
   seed = 731,
   {
-    octreeResolution = 448,
+    octreeResolution = 512,
     steps = 36,
-    cfg = 5,
+    cfg = 5.5,
   }: { octreeResolution?: number; steps?: number; cfg?: number } = {},
 ) {
   const wf = JSON.parse(
     readFileSync(join(WORKFLOWS_DIR, 'hunyuan3d21_image_to_mesh.api.json'), 'utf8'),
   );
   wf['2'].inputs.image = inputImageName;
+  if (wf['4']?.inputs) wf['4'].inputs.resolution = 8192;
   wf['7'].inputs.seed = seed;
   wf['7'].inputs.steps = Math.max(15, Math.min(60, Math.round(steps)));
   wf['7'].inputs.cfg = Math.max(1, Math.min(10, cfg));
-  wf['8'].inputs.num_chunks = 20000;
+  wf['8'].inputs.num_chunks = 32000;
   wf['8'].inputs.octree_resolution = Math.max(192, Math.min(512, Math.round(octreeResolution)));
   wf['10'].inputs.filename_prefix = `shapecast/${outputPrefix}`;
   wf['24'].inputs.filename_prefix = `shapecast/${outputPrefix}_cutout`;
@@ -325,11 +326,11 @@ export async function runBlenderRefineOnAlienPc({
   rawGlbFilename,
   name = 'refined-model',
   targetMm = 120,
-  gridRes = 480,
+  gridRes = 512,
   stlMaxVerts = 160000,
   maxVerts = 46000,
   smoothIterations = 1,
-  smoothFactor = 0.16,
+  smoothFactor = 0.15,
   aspectRatioTarget,
   localOutDir,
   skipScp = false,
@@ -529,13 +530,13 @@ export async function runForgePipeline(opts: ForgePipelineOptions): Promise<Forg
     targetMm = 120,
     name,
     seed = 731,
-    gridRes = 450,
+    gridRes = 512,
     stlMaxVerts = 160000,
     maxVerts = 46000,
     smoothIterations = 1,
-    smoothFactor = 0.16,
+    smoothFactor = 0.15,
     aspectRatioTarget,
-    octreeResolution = 448,
+    octreeResolution = 512,
     steps = 36,
     localOutDir,
     skipScp = false,

@@ -418,7 +418,7 @@ function addPhotos(files) {
 }
 
 // ---------- Mesh Forge (Hunyuan3D via MCP) ----------
-const UI_VERSION = '2.8';
+const UI_VERSION = '2.9';
 const STAGE_LABELS = {
   queued: 'Queued on AlienPC...',
   reference_image: '1/3 Step 0 Studio Prep (Gemini / ChatGPT / Flux)...',
@@ -844,12 +844,18 @@ async function runForgeGenerate() {
 
   const targetMm = parseScaleRefMm(state.project.scaleRef, 120);
   const customName =
-    state.project.name && state.project.name !== SAMPLE_LIST.name ? state.project.name : '';
+    state.project.name &&
+    state.project.name !== SAMPLE_LIST.name &&
+    state.project.name !== state.forgeMesh?.name
+      ? state.project.name
+      : '';
   const photoName =
     photoBlob && 'name' in photoBlob && typeof photoBlob.name === 'string'
       ? photoBlob.name.replace(/\.\w+$/, '')
       : '';
   const name = customName || brief.slice(0, 60) || photoName || 'forge-model';
+  state.project.name = name.slice(0, META.name);
+  $('projectName').value = state.project.name;
 
   try {
     let photoBase64;

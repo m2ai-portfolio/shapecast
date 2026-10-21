@@ -6,13 +6,16 @@ const cssVar = (name, fallback) => {
 };
 
 /**
- * Compute crease-angle vertex normals on a non-indexed triangle position array:
+ * Compute crease-angle vertex normals AND Ridge/Valley curvature cavity vertex colors:
  * - Smoothly blends normals across micro-facets where dihedral angle < creaseDeg (28 deg)
  * - Preserves razor-sharp hard edges on rafters, window frames, roof eaves & creases (>= 28 deg)
+ * - Computes local mean curvature (concave valley AO darkening + convex ridge highlighting)
+ *   so recessed panel lines, vents, and architectural trim pop out with Blender Workbench / Meshy contrast.
  */
-function computeCreaseNormals(pos, cosCrease = 0.8829) {
+function computeCreaseNormalsAndCavity(pos, baseColorHex, cosCrease = 0.8829) {
   const nTris = pos.length / 9;
   const faceNormals = new Float32Array(nTris * 3);
+  const centroids = new Float32Array(nTris * 3);
   const vertMap = new Map();
 
   for (let t = 0; t < nTris; t++) {
@@ -43,6 +46,9 @@ function computeCreaseNormals(pos, cosCrease = 0.8829) {
     faceNormals[fn] = nx;
     faceNormals[fn + 1] = ny;
     faceNormals[fn + 2] = nz;
+    centroids[fn] = (ax + bx + cx) * 0.3333333;
+    centroids[fn + 1] = (ay + by + cy) * 0.3333333;
+    centroids[fn + 2] = (az + bz + cz) * 0.3333333;
 
     for (let k = 0; k < 3; k++) {
       const vo = o + k * 3;
@@ -56,30 +62,55 @@ function computeCreaseNormals(pos, cosCrease = 0.8829) {
     }
   }
 
+  const br = ((baseColorHex >> 16) & 255) / 255;
+  const bg = ((baseColorHex >> 8) & 255) / 255;
+  const bb = (baseColorHex & 255) / 255;
+
   const normals = new Float32Array(pos.length);
+  const colors = new Float32Array(pos.length);
   for (let t = 0; t < nTris; t++) {
     const o = t * 9;
     const fn = t * 3;
     const tnx = faceNormals[fn],
       tny = faceNormals[fn + 1],
       tnz = faceNormals[fn + 2];
+    const tcx = centroids[fn],
+      tcy = centroids[fn + 1],
+      tcz = centroids[fn + 2];
     for (let k = 0; k < 3; k++) {
       const vo = o + k * 3;
       const key = `${Math.round(pos[vo] * 200)},${Math.round(pos[vo + 1] * 200)},${Math.round(pos[vo + 2] * 200)}`;
       const adj = vertMap.get(key);
       let sx = 0,
         sy = 0,
-        sz = 0;
-      if (adj && adj.length > 1 && adj.length <= 24) {
+        sz = 0,
+        curvSum = 0,
+        curvCnt = 0;
+      if (adj && adj.length > 1 && adj.length <= 28) {
         for (let i = 0; i < adj.length; i++) {
-          const ofn = adj[i] * 3;
+          const u = adj[i];
+          const ofn = u * 3;
           const onx = faceNormals[ofn],
             ony = faceNormals[ofn + 1],
             onz = faceNormals[ofn + 2];
-          if (tnx * onx + tny * ony + tnz * onz >= cosCrease) {
+          const dot = tnx * onx + tny * ony + tnz * onz;
+          if (dot >= cosCrease) {
             sx += onx;
             sy += ony;
             sz += onz;
+          }
+          if (u !== t && dot < 0.999) {
+            const dx = centroids[ofn] - tcx,
+              dy = centroids[ofn + 1] - tcy,
+              dz = centroids[ofn + 2] - tcz;
+            const dl = Math.hypot(dx, dy, dz);
+            if (dl > 1e-5) {
+              // bend > 0 => concave valley (darken); bend < 0 => convex ridge (highlight)
+              const bend = (dx * tnx + dy * tny + dz * tnz) / dl;
+              const weight = Math.min(1.0, Math.sqrt(Math.max(0, 1 - dot)));
+              curvSum += bend * weight;
+              curvCnt++;
+            }
           }
         }
       } else {
@@ -91,9 +122,24 @@ function computeCreaseNormals(pos, cosCrease = 0.8829) {
       normals[vo] = sx / sl;
       normals[vo + 1] = sy / sl;
       normals[vo + 2] = sz / sl;
+
+      let shade = 1.0;
+      if (curvCnt > 0) {
+        const avgCurv = curvSum / curvCnt;
+        if (avgCurv > 0.01) {
+          // Concave valley / crevice ambient occlusion
+          shade = Math.max(0.52, 1.0 - avgCurv * 1.35);
+        } else if (avgCurv < -0.01) {
+          // Convex ridge highlight
+          shade = Math.min(1.14, 1.0 - avgCurv * 0.42);
+        }
+      }
+      colors[vo] = Math.min(1, br * shade);
+      colors[vo + 1] = Math.min(1, bg * shade);
+      colors[vo + 2] = Math.min(1, bb * shade);
     }
   }
-  return normals;
+  return { normals, colors };
 }
 
 /** Three.js viewport with a true-size Saturn 3 plate. Returns null when THREE or WebGL is missing. */
@@ -177,16 +223,23 @@ export function createViewport(canvas, { onSelect = (_id) => {} } = {}) {
     for (const it of items) {
       const geo = new THREE.BufferGeometry();
       const posArr = Float32Array.from(it.tris);
-      geo.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
-      geo.setAttribute('normal', new THREE.BufferAttribute(computeCreaseNormals(posArr), 3));
-      const color = it.failed
+      const baseHex = it.failed
         ? colors.failed
         : it.part.id === selectedId
           ? colors.accent
           : colors.base;
+      const { normals, colors: vColors } = computeCreaseNormalsAndCavity(posArr, baseHex);
+      geo.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
+      geo.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+      geo.setAttribute('color', new THREE.BufferAttribute(vColors, 3));
       const mesh = new THREE.Mesh(
         geo,
-        new THREE.MeshStandardMaterial({ color, roughness: 0.52, metalness: 0.04 }),
+        new THREE.MeshStandardMaterial({
+          color: 0xffffff,
+          vertexColors: true,
+          roughness: 0.48,
+          metalness: 0.05,
+        }),
       );
       mesh.userData.id = it.part.id;
       group.add(mesh);
@@ -200,6 +253,28 @@ export function createViewport(canvas, { onSelect = (_id) => {} } = {}) {
       target.z + dist * Math.cos(phi),
     );
     camera.lookAt(target);
+    // Keep 3-point studio lights locked relative to viewer camera angle so every orbit side is crisply lit
+    const kPhi = Math.max(0.18, phi - 0.42),
+      kTheta = theta + 0.58;
+    keyLight.position.set(
+      target.x + 480 * Math.sin(kPhi) * Math.cos(kTheta),
+      target.y + 480 * Math.sin(kPhi) * Math.sin(kTheta),
+      target.z + 480 * Math.cos(kPhi),
+    );
+    const rPhi = Math.max(0.22, phi - 0.35),
+      rTheta = theta - 2.15;
+    rimLight.position.set(
+      target.x + 480 * Math.sin(rPhi) * Math.cos(rTheta),
+      target.y + 480 * Math.sin(rPhi) * Math.sin(rTheta),
+      target.z + 480 * Math.cos(rPhi),
+    );
+    const fPhi = Math.min(2.7, phi + 0.28),
+      fTheta = theta - 0.65;
+    fillLight.position.set(
+      target.x + 480 * Math.sin(fPhi) * Math.cos(fTheta),
+      target.y + 480 * Math.sin(fPhi) * Math.sin(fTheta),
+      target.z + 480 * Math.cos(fPhi),
+    );
     needsRender = true;
   }
   function fit(bbox) {

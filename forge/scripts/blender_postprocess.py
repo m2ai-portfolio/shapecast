@@ -28,13 +28,13 @@ def parse_args():
         "output_glb": "",
         "output_stl": "",
         "target_mm": 120.0,
-        "grid_res": 450,
+        "grid_res": 512,
         "stl_max_verts": 160000,
         "max_verts": 46000,
         "smooth_iters": 1,
-        "smooth_factor": 0.16,
-        "sharpen_iters": 1,
-        "sharpen_factor": 0.30,
+        "smooth_factor": 0.15,
+        "sharpen_iters": 0,
+        "sharpen_factor": 0.0,
         "planar_deg": 0.0,
         "aspect_target": "",
     }
@@ -296,7 +296,7 @@ def main():
     obj.location = (-cx, -cy, -bmin[2])
     bpy.ops.object.transform_apply(location=True, rotation=False, scale=False)
 
-    # 1. Ultra-fine OpenVDB Voxel Remesh (default grid_res=450 -> ~0.26 mm voxels)
+    # 1. Ultra-fine OpenVDB Voxel Remesh (default grid_res=512 -> ~0.23 mm voxels)
     bmin, bmax = get_world_bbox(obj)
     max_span = max(bmax[0] - bmin[0], bmax[1] - bmin[1], bmax[2] - bmin[2], 10.0)
     fine_res = max(220, min(520, int(args["grid_res"])))
@@ -308,7 +308,7 @@ def main():
     remesh.adaptivity = 0.0
     bpy.ops.object.modifier_apply(modifier=remesh.name)
 
-    # 2. Separate loose shells and keep largest connected solid
+    # 2. Separate loose shells and keep main body + any substantial detail parts (>= 0.5% of main body)
     bpy.ops.object.mode_set(mode="EDIT")
     bpy.ops.mesh.select_all(action="SELECT")
     bpy.ops.mesh.remove_doubles(threshold=1e-4)
@@ -317,13 +317,21 @@ def main():
 
     parts = [o for o in bpy.context.scene.objects if o.type == "MESH" and len(o.data.polygons) > 0]
     parts.sort(key=lambda o: len(o.data.polygons), reverse=True)
-    main_obj = parts[0]
+    max_part_faces = len(parts[0].data.polygons)
+    keep_parts = [parts[0]]
     for extra in parts[1:]:
-        bpy.data.objects.remove(extra, do_unlink=True)
+        if len(extra.data.polygons) >= max(400, int(max_part_faces * 0.005)):
+            keep_parts.append(extra)
+        else:
+            bpy.data.objects.remove(extra, do_unlink=True)
 
     bpy.ops.object.select_all(action="DESELECT")
-    main_obj.select_set(True)
-    bpy.context.view_layer.objects.active = main_obj
+    for kp in keep_parts:
+        kp.select_set(True)
+    bpy.context.view_layer.objects.active = keep_parts[0]
+    if len(keep_parts) > 1:
+        bpy.ops.object.join()
+    main_obj = bpy.context.view_layer.objects.active
 
     # 3a. Micro De-Staircase pass (removes sub-voxel stepping without rounding features)
     if args["smooth_iters"] > 0 and args["smooth_factor"] > 0:
@@ -332,38 +340,12 @@ def main():
         smooth.iterations = max(1, min(4, int(args["smooth_iters"])))
         bpy.ops.object.modifier_apply(modifier=smooth.name)
 
-    # 3b. 3D Unsharp Mask / Inverse Laplacian Crease Sharpening (restores crisp rafters, window mullions & ridges)
-    if args.get("sharpen_iters", 0) > 0 and args.get("sharpen_factor", 0) > 0:
-        sharpen = main_obj.modifiers.new(name="ShapeCastSharpen", type="SMOOTH")
-        sharpen.factor = -max(0.05, min(0.65, float(args["sharpen_factor"])))
-        sharpen.iterations = max(1, min(4, int(args["sharpen_iters"])))
-        bpy.ops.object.modifier_apply(modifier=sharpen.name)
-
-    # Apply exact target_mm (and optional aspect_target [1.0, width_ratio, height_ratio]) and ground Z=0 before export split
+    # Apply exact uniform target_mm scaling (preserving true 1:1:1 isotropic proportions) and ground Z=0
     bmin, bmax = get_world_bbox(main_obj)
     sx = max(bmax[0] - bmin[0], 1e-6)
     sy = max(bmax[1] - bmin[1], 1e-6)
-    sz = max(bmax[2] - bmin[2], 1e-6)
     s2 = args["target_mm"] / max(sx, sy)
-    scale_vec = [s2, s2, s2]
-
-    if args["aspect_target"]:
-        try:
-            parts_ar = [float(x.strip()) for x in args["aspect_target"].split(",") if x.strip()]
-            if len(parts_ar) == 3 and parts_ar[0] > 0 and parts_ar[1] > 0 and parts_ar[2] > 0:
-                r_width = parts_ar[1] / parts_ar[0]
-                r_height = parts_ar[2] / parts_ar[0]
-                target_major = args["target_mm"]
-                target_minor = args["target_mm"] * max(0.15, min(1.0, r_width))
-                target_z = args["target_mm"] * max(0.10, min(1.5, r_height))
-                if sx >= sy:
-                    scale_vec = [target_major / sx, target_minor / sy, target_z / sz]
-                else:
-                    scale_vec = [target_minor / sx, target_major / sy, target_z / sz]
-        except Exception:
-            pass
-
-    main_obj.scale = tuple(scale_vec)
+    main_obj.scale = (s2, s2, s2)
     bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
 
     bmin, bmax = get_world_bbox(main_obj)

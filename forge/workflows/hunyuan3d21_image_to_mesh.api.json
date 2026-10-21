@@ -35,7 +35,7 @@
   "4": {
     "class_type": "EmptyLatentHunyuan3Dv2",
     "inputs": {
-      "resolution": 4096,
+      "resolution": 8192,
       "batch_size": 1
     }
   },
@@ -47,8 +47,8 @@
       "negative": ["6", 1],
       "latent_image": ["4", 0],
       "seed": 731,
-      "steps": 30,
-      "cfg": 5,
+      "steps": 36,
+      "cfg": 5.5,
       "sampler_name": "euler",
       "scheduler": "normal",
       "denoise": 1
@@ -59,8 +59,8 @@
     "inputs": {
       "samples": ["7", 0],
       "vae": ["1", 2],
-      "num_chunks": 20000,
-      "octree_resolution": 448
+      "num_chunks": 32000,
+      "octree_resolution": 512
     }
   },
   "9": {

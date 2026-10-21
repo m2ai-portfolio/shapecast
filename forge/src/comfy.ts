@@ -15,6 +15,7 @@ import {
   type PreparedMeshResult,
 } from './mesh.js';
 import { runStudioPrep, type StudioEngine } from './studioPrep.js';
+import { generateBlenderCadScript } from './blenderGen.js';
 
 const execFileAsync = promisify(execFile);
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -548,13 +549,18 @@ print('BLENDER_SCRIPT_OK')
   );
 
   const cmd = `C:\\Blender\\blender-4.3.2-windows-x64\\blender.exe --background --python "${remoteScriptPath}" & del "${remoteScriptPath.replace(/\//g, '\\')}"`;
-  const { stdout } = await execFileAsync(
+  const { stdout, stderr } = await execFileAsync(
     'ssh',
     ['-n', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', sshHost, cmd],
     { timeout: 60_000, maxBuffer: 10 * 1024 * 1024 },
   );
   if (!stdout.includes('BLENDER_SCRIPT_OK')) {
-    throw new Error('Blender script did not complete cleanly');
+    const tail = `${stdout ?? ''}\n${stderr ?? ''}`.trim().slice(-900);
+    throw new Error(
+      tail
+        ? `Blender script did not complete cleanly: ${tail}`
+        : 'Blender script did not complete cleanly',
+    );
   }
 
   let cadMeta: Record<string, any> = { mode: 'blender_cad_exact' };
@@ -589,6 +595,93 @@ print('BLENDER_SCRIPT_OK')
     rawGlbFilename: outGlbFilename,
     qualityMetrics: cadMeta,
   };
+}
+
+export async function runAutoBlenderCadOnAlienPc({
+  comfyUrl,
+  brief,
+  scaleRef,
+  previousCode,
+  userFeedback,
+  photoBase64,
+  name,
+  targetMm = 120,
+  localOutDir,
+  skipScp = false,
+  onStage,
+}: {
+  comfyUrl: string;
+  brief?: string;
+  scaleRef?: string;
+  previousCode?: string;
+  userFeedback?: string;
+  photoBase64?: string;
+  name?: string;
+  targetMm?: number;
+  localOutDir?: string;
+  skipScp?: boolean;
+  onStage?: (stage: 'reference_image' | 'mesh_generation' | 'repair_and_export') => void;
+}): Promise<ForgePipelineResult> {
+  onStage?.('reference_image');
+  let gen = await generateBlenderCadScript({
+    brief,
+    scaleRef,
+    previousCode,
+    userFeedback,
+    photoBase64,
+  });
+
+  onStage?.('mesh_generation');
+  const resolvedName = (name?.trim() || gen.name || brief?.trim() || 'blender-cad-model').slice(
+    0,
+    80,
+  );
+  try {
+    const res = await runBlenderScriptOnAlienPc({
+      comfyUrl,
+      pythonCode: gen.pythonCode,
+      name: resolvedName,
+      targetMm,
+      localOutDir,
+      skipScp,
+    });
+    return {
+      ...res,
+      qualityMetrics: {
+        ...(res.qualityMetrics ?? {}),
+        pythonCode: gen.pythonCode,
+        cadProvider: gen.provider,
+      },
+    };
+  } catch (firstErr) {
+    // Self-healing retry: pass the exact Blender 4.3 Python traceback back to the LLM
+    onStage?.('reference_image');
+    gen = await generateBlenderCadScript({
+      brief,
+      scaleRef,
+      previousCode: gen.pythonCode,
+      userFeedback,
+      photoBase64,
+      errorFeedback: (firstErr as Error).message,
+    });
+    onStage?.('mesh_generation');
+    const res = await runBlenderScriptOnAlienPc({
+      comfyUrl,
+      pythonCode: gen.pythonCode,
+      name: resolvedName,
+      targetMm,
+      localOutDir,
+      skipScp,
+    });
+    return {
+      ...res,
+      qualityMetrics: {
+        ...(res.qualityMetrics ?? {}),
+        pythonCode: gen.pythonCode,
+        cadProvider: `${gen.provider} (repaired)`,
+      },
+    };
+  }
 }
 
 export async function runForgePipeline(opts: ForgePipelineOptions): Promise<ForgePipelineResult> {

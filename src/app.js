@@ -2,7 +2,7 @@ import { validatePartList } from './schema.js';
 import { runPrintChecks, runMeshPrintChecks } from './printcheck.js';
 import { writeBinaryStl, concatTriangles } from './stl.js';
 import { createRequestTracker, createSaveController } from './lifecycle.js';
-import { builderPrompt, editorPrompt, blenderPrompt, criticPrompt } from './prompts.js';
+import { builderPrompt, editorPrompt, criticPrompt } from './prompts.js';
 import { slugify, readmeText, truncateRequest } from './exportbundle.js';
 import {
   FIELDS,
@@ -79,7 +79,7 @@ function setBusy(on, text) {
     state.mode === 'forge'
       ? !!caps.mcp
       : state.mode === 'blender'
-        ? !!(caps.mcp && caps.sample)
+        ? !!caps.mcp
         : !!caps.sample;
   $('buildBtn').disabled = on || !canBuild;
   $('buildBtn').textContent =
@@ -89,8 +89,11 @@ function setBusy(on, text) {
         ? 'Build in Blender'
         : 'Build model';
   const rBtn = $('refineBtn');
-  if (rBtn) rBtn.disabled = on || !(caps.mcp && caps.sample);
-  $('sendBtn').disabled = on || !caps.sample;
+  if (rBtn)
+    rBtn.disabled =
+      on || (state.mode === 'blender' ? !caps.mcp : !(caps.mcp && caps.sample));
+  $('sendBtn').disabled =
+    on || (state.mode === 'blender' ? !caps.mcp : !caps.sample);
   $('stopBtn').classList.toggle('hidden', !on);
 }
 function setMode(nextMode) {
@@ -419,12 +422,18 @@ function addPhotos(files) {
 }
 
 // ---------- Mesh Forge (Hunyuan3D via MCP) ----------
-const UI_VERSION = '3.0';
+const UI_VERSION = '3.1';
 const STAGE_LABELS = {
   queued: 'Queued on AlienPC...',
   reference_image: '1/3 Step 0 Studio Prep (Gemini / ChatGPT / Flux)...',
   mesh_generation: '2/3 Sculpting 3D mesh (Hunyuan3D 2.1)...',
   repair_and_export: '3/3 Blender 4.3 crisp remesh & writing STL...',
+};
+const BLENDER_STAGE_LABELS = {
+  queued: 'Queued on AlienPC...',
+  reference_image: '1/2 Generating Blender 4.3 CAD Python (bpy) script on Forge...',
+  mesh_generation: '2/2 Running headless Blender 4.3 Exact CAD export on AlienPC...',
+  repair_and_export: '2/2 Exporting razor-sharp CAD STL on AlienPC...',
 };
 
 function saveLastForgeMeta(jobId) {
@@ -554,6 +563,9 @@ async function restoreLatestForgeMeshIfAvailable() {
     if (job?.ok && job?.status === 'done' && job?.preview) {
       const tris = unpackForgePreview(job.preview);
       state.forgeMesh = { ...job, tris };
+      if (job.qualityMetrics?.pythonCode) {
+        state.lastBlenderCode = job.qualityMetrics.pythonCode;
+      }
       if (job.name) state.project.name = String(job.name).slice(0, META.name);
       render();
       viewport?.fit(job.bbox);
@@ -597,13 +609,17 @@ async function pollForgeJobUntilDone(jobId, controller) {
       return null;
     }
     if (job.status === 'running') {
-      const label = STAGE_LABELS[job.stage] || `Running (${job.stage})...`;
+      const labels = state.mode === 'blender' ? BLENDER_STAGE_LABELS : STAGE_LABELS;
+      const label = labels[job.stage] || STAGE_LABELS[job.stage] || `Running (${job.stage})...`;
       setBusy(true, `${label} (${job.elapsedSec ?? 0}s)`);
       continue;
     }
     if (job.status === 'done') {
       const tris = unpackForgePreview(job.preview);
       state.forgeMesh = { ...job, tris };
+      if (job.qualityMetrics?.pythonCode) {
+        state.lastBlenderCode = job.qualityMetrics.pythonCode;
+      }
       if (job.name) state.project.name = String(job.name).slice(0, META.name);
       saveLastForgeMeta(job.jobId);
       saveCtl?.markChanged();
@@ -935,7 +951,7 @@ async function runForgeGenerate() {
 }
 
 async function runBlenderGenerate(userFeedback = '') {
-  if (!caps.mcp || !caps.sample || state.inference) return;
+  if (!caps.mcp || state.inference) return;
   metaChange();
   const controller = new AbortController();
   const token = tracker.token();
@@ -943,8 +959,8 @@ async function runBlenderGenerate(userFeedback = '') {
   showError('');
 
   const brief = state.project.brief.trim();
-  const hasPhotoFiles = state.project.photos.some((p) => p.file);
-  if (!brief && !hasPhotoFiles && !userFeedback) {
+  const photoBlob = await resolveFirstPhotoBlob();
+  if (!brief && !photoBlob && !userFeedback) {
     showError('Write a brief or attach a reference photo to build in Blender 3D.');
     state.inference = null;
     setBusy(false, '');
@@ -954,91 +970,85 @@ async function runBlenderGenerate(userFeedback = '') {
   const isRevision = Boolean((userFeedback || !brief) && state.lastBlenderCode);
   const targetMm = parseScaleRefMm(state.project.scaleRef, 120);
   try {
-    let blenderImages = [];
-    let hasPhotos = false;
-    let hasRenderView = false;
-    if (imageLimits) {
-      const filesToSend = [];
-      for (const p of state.project.photos) {
-        if (p.file) {
-          filesToSend.push(p.file);
-          hasPhotos = true;
-        }
-      }
-      if (isRevision && viewport?.captureFourViews && state.forgeMesh?.bbox) {
-        const viewFile = await viewport.captureFourViews(state.forgeMesh.bbox);
-        if (viewFile) {
-          filesToSend.push(viewFile);
-          hasRenderView = true;
-        }
-      }
-      if (filesToSend.length) {
-        blenderImages = prepareImages(filesToSend, imageLimits).images;
+    let photoBase64;
+    if (photoBlob) {
+      setBusy(true, 'Preparing reference photo for Blender 3D CAD...');
+      const shrunk = await shrinkPhotoForForge(photoBlob);
+      photoBase64 = shrunk.base64;
+    } else if (isRevision && viewport?.captureFourViews && state.forgeMesh?.bbox) {
+      const viewFile = await viewport.captureFourViews(state.forgeMesh.bbox);
+      if (viewFile) {
+        const shrunk = await shrinkPhotoForForge(viewFile);
+        photoBase64 = shrunk.base64;
       }
     }
+
+    const derivedName = (
+      brief
+        ? brief.slice(0, META.name)
+        : state.project.name && state.project.name !== SAMPLE_LIST.name
+          ? state.project.name
+          : 'blender-cad-model'
+    ).slice(0, META.name);
+    state.project.name = derivedName;
+    if ($('projectName')) $('projectName').value = derivedName;
 
     setBusy(
       true,
       isRevision
-        ? '1/2 Claude refining Blender 4.3 CAD Python (bpy) script...'
-        : '1/2 Claude writing razor-sharp Blender 4.3 CAD Python (bpy) script...',
+        ? '1/2 Refining Blender 4.3 CAD Python (bpy) script on ShapeCast Forge...'
+        : '1/2 Writing razor-sharp Blender 4.3 CAD Python (bpy) script on ShapeCast Forge...',
     );
     addChat(
       'user',
       isRevision
         ? `Refine Blender 3D CAD: ${userFeedback || 'Add finer hard-surface details & greebles'}`
-        : `Blender 3D CAD (${targetMm} mm): ${brief || '(from reference photo)'}${hasPhotos ? ' [+photo]' : ''}`,
+        : `Blender 3D CAD (${targetMm} mm): ${brief || '(from reference photo)'}${photoBlob ? ' [+photo]' : ''}`,
     );
-    const reply = await caps.sample.json(
-      blenderPrompt({
-        brief,
-        scaleRef: state.project.scaleRef,
-        previousCode: isRevision ? state.lastBlenderCode : '',
-        userFeedback,
-        hasPhotos,
-        hasRenderView,
-      }),
-      {
-        signal: controller.signal,
-        images: blenderImages.length ? blenderImages : undefined,
-        modelTier: 'complex',
-        cache: false,
-        onText: ({ text }) => {
-          $('rawReply').textContent = text;
-        },
-      },
+
+    const autoPayloadB64 = btoa(
+      unescape(
+        encodeURIComponent(
+          JSON.stringify({
+            brief,
+            scaleRef: state.project.scaleRef,
+            previousCode: isRevision ? state.lastBlenderCode : '',
+            userFeedback,
+            photoBase64,
+          }),
+        ),
+      ),
     );
-    if (!reply?.pythonCode || typeof reply.pythonCode !== 'string') {
-      showError('Claude did not return a valid Blender Python script.');
-      return;
-    }
-    state.lastBlenderCode = reply.pythonCode;
-    setBusy(true, '2/2 Running headless Blender 4.3 Exact CAD export on AlienPC...');
-    const codeB64 = btoa(unescape(encodeURIComponent(reply.pythonCode)));
-    const modelName = reply.name || brief.slice(0, 60) || 'blender-cad-model';
-    state.project.name = modelName.slice(0, META.name);
-    $('projectName').value = state.project.name;
+
     const startRes = await caps.mcp.callTool(
       FORGE_SERVER,
       'forge_generate',
       {
-        prompt: '__FORGE_BLENDER__:bpy',
-        photoBase64: '__FORGE_BLENDER__:' + codeB64,
+        prompt: '__FORGE_BLENDER_AUTO__:cad',
+        photoBase64: '__FORGE_BLENDER_AUTO__:' + autoPayloadB64,
         targetMm,
-        name: modelName,
+        name: derivedName,
       },
       { cache: false },
     );
     if (!startRes?.payload?.ok) {
-      showError(startRes?.payload?.error || 'Blender execution on AlienPC failed.');
+      showError(startRes?.payload?.error || 'Blender CAD generation on AlienPC failed.');
+      await refreshForgeStatus();
       return;
     }
     const out = await pollForgeJobUntilDone(startRes.payload.jobId, controller);
     if (!out) return;
+    if (out.qualityMetrics?.pythonCode) {
+      state.lastBlenderCode = out.qualityMetrics.pythonCode;
+    }
+    const providerTag = out.qualityMetrics?.cadProvider
+      ? ` [${out.qualityMetrics.cadProvider}]`
+      : '';
     addChat(
       'claude',
-      `Blender 4.3 Exact CAD ready: ${(out.qualityMetrics?.stl_faces || out.triangleCount).toLocaleString()} razor-sharp CAD triangles (${out.bbox.size.map((x) => x.toFixed(1)).join(' x ')} mm). Written to AlienPC: ${out.stlPath}`,
+      `Blender 4.3 Exact CAD ready${providerTag}: ${(out.qualityMetrics?.stl_faces || out.triangleCount).toLocaleString()} razor-sharp CAD triangles (${out.bbox.size.map((x) => x.toFixed(1)).join(' x ')} mm). Written to AlienPC: ${out.stlPath}`,
     );
+    await refreshForgeStatus();
   } catch (e) {
     if (!controller.signal.aborted) {
       showError(`Blender error: ${e?.message || e?.code || 'failed'}`);

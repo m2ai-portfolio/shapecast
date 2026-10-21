@@ -10,6 +10,7 @@ import {
   runForgePipeline,
   runBlenderRefineOnAlienPc,
   runBlenderScriptOnAlienPc,
+  runAutoBlenderCadOnAlienPc,
   type ForgePipelineOptions,
   type ForgePipelineResult,
 } from './comfy.js';
@@ -128,16 +129,20 @@ export function createJobManager(opts: JobManagerOptions) {
     }
 
     const isRefine = rawPrompt.startsWith('__FORGE_REFINE__:');
+    const isBlenderAuto =
+      rawPrompt.startsWith('__FORGE_BLENDER_AUTO__') ||
+      Boolean(input.photoBase64?.startsWith('__FORGE_BLENDER_AUTO__:'));
     const isBlender =
-      rawPrompt.startsWith('__FORGE_BLENDER__:') ||
-      Boolean(input.photoBase64?.startsWith('__FORGE_BLENDER__:'));
+      !isBlenderAuto &&
+      (rawPrompt.startsWith('__FORGE_BLENDER__:') ||
+        Boolean(input.photoBase64?.startsWith('__FORGE_BLENDER__:')));
     const isHd = rawPrompt.startsWith('__FORGE_HD__:');
 
     const jobId = 'job_' + randomBytes(6).toString('hex');
     const targetMm = Math.max(10, Math.min(218, input.targetMm ?? 120));
     const label = (
       input.name?.trim() ||
-      (!isRefine && !isBlender && !isHd ? rawPrompt : '') ||
+      (!isRefine && !isBlender && !isBlenderAuto && !isHd ? rawPrompt : '') ||
       'forge-model'
     ).slice(0, 80);
     const initialStage: JobStage = isRefine
@@ -188,6 +193,29 @@ export function createJobManager(opts: JobManagerOptions) {
             aspectRatioTarget: cfg.aspectRatioTarget,
             localOutDir: opts.localOutDir,
             skipScp: opts.skipScp,
+          });
+        } else if (isBlenderAuto) {
+          const payloadJson = input.photoBase64?.startsWith('__FORGE_BLENDER_AUTO__:')
+            ? Buffer.from(
+                input.photoBase64.slice('__FORGE_BLENDER_AUTO__:'.length),
+                'base64',
+              ).toString('utf8')
+            : rawPrompt.slice('__FORGE_BLENDER_AUTO__:'.length);
+          const autoCfg = JSON.parse(payloadJson || '{}');
+          res = await runAutoBlenderCadOnAlienPc({
+            comfyUrl: opts.comfyUrl,
+            brief: autoCfg.brief,
+            scaleRef: autoCfg.scaleRef,
+            previousCode: autoCfg.previousCode,
+            userFeedback: autoCfg.userFeedback,
+            photoBase64: autoCfg.photoBase64,
+            name: label,
+            targetMm,
+            localOutDir: opts.localOutDir,
+            skipScp: opts.skipScp,
+            onStage: (stage) => {
+              job.stage = stage;
+            },
           });
         } else if (isBlender) {
           const pyCode = input.photoBase64?.startsWith('__FORGE_BLENDER__:')

@@ -30,12 +30,13 @@ export function buildStudioPrepPrompt(brief?: string, hasPhoto = false): string 
     .slice(0, 1000);
   if (hasPhoto) {
     return [
-      'Transform this reference photo into an ideal 3D-scanner studio product photograph for watertight 3D mesh reconstruction:',
+      'Transform this reference photo into an ideal 3D-scanner studio product photograph for high-definition watertight 3D mesh reconstruction:',
       cleanBrief
         ? `- Subject details to emphasize: ${cleanBrief}.`
         : '- Preserve the exact subject identity, proportions, body kit, aerodynamic parts, wheels, and structural details from the input photo.',
       '- Render the complete object in a clean front three-quarter orthographic view, centered in frame with generous white margin on all sides so nothing is cropped.',
       '- Pure solid white studio background (#FFFFFF) with ZERO ground shadow, ZERO cast shadow, and ZERO specular glare or reflections on windows/surfaces.',
+      '- Accentuate bold, deep-relief 3D physical crevices: deeply recessed window frames, pronounced rafters/eaves/molding, crisp chamfered panel seams, and strong geometric depth so volumetric 3D reconstruction captures every detail.',
       '- Use uniform satin/matte studio lighting so every panel seam, crease, wheel arch, and geometric edge is sharp, high-contrast, and unambiguous for 3D reconstruction.',
     ].join('\n');
   }
@@ -44,7 +45,8 @@ export function buildStudioPrepPrompt(brief?: string, hasPhoto = false): string 
     '- Single complete 3D object centered in frame with generous white margin on all sides.',
     '- Clean front three-quarter orthographic studio view.',
     '- Pure solid white studio background (#FFFFFF) with ZERO ground shadow and ZERO window/specular glare.',
-    '- Crisp matte studio lighting with sharp geometric creases, clean panel seams, and well-defined structural details suitable for 3D resin printing.',
+    '- Sculpt with bold, deep-relief physical geometry: deeply recessed window mullions and frames, pronounced eaves/rafters/trim, crisp chamfered edges, and clear crevices suitable for high-detail 3D resin printing.',
+    '- Crisp matte studio lighting with sharp geometric creases, clean panel seams, and well-defined structural details.',
   ].join('\n');
 }
 

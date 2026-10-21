@@ -84,8 +84,8 @@ export function buildHunyuanWorkflow(
   outputPrefix: string,
   seed = 731,
   {
-    octreeResolution = 352,
-    steps = 32,
+    octreeResolution = 448,
+    steps = 36,
     cfg = 5,
   }: { octreeResolution?: number; steps?: number; cfg?: number } = {},
 ) {
@@ -96,6 +96,7 @@ export function buildHunyuanWorkflow(
   wf['7'].inputs.seed = seed;
   wf['7'].inputs.steps = Math.max(15, Math.min(60, Math.round(steps)));
   wf['7'].inputs.cfg = Math.max(1, Math.min(10, cfg));
+  wf['8'].inputs.num_chunks = 20000;
   wf['8'].inputs.octree_resolution = Math.max(192, Math.min(512, Math.round(octreeResolution)));
   wf['10'].inputs.filename_prefix = `shapecast/${outputPrefix}`;
   wf['24'].inputs.filename_prefix = `shapecast/${outputPrefix}_cutout`;
@@ -244,10 +245,12 @@ export async function deliverStlToAlienPc(
 
 export interface BlenderRemeshOptions {
   gridRes?: number;
+  stlMaxVerts?: number;
   maxVerts?: number;
   smoothIterations?: number;
   smoothFactor?: number;
   aspectRatioTarget?: [number, number, number];
+  outputStlPath?: string;
 }
 
 export interface ForgePipelineOptions extends BlenderRemeshOptions {
@@ -287,19 +290,21 @@ export async function runBlenderPostProcessOnAlienPc(
 ): Promise<{ ok: boolean; summary?: any }> {
   const inPath = `C:/Users/matth/ComfyUI/output/${subfolder ? `${subfolder}/` : ''}${inputFilename}`;
   const outPath = `C:/Users/matth/ComfyUI/output/shapecast/${outGlbFilename}`;
+  const stlMaxVerts = Math.max(46000, Math.min(300000, extra.stlMaxVerts ?? 160000));
   const maxVerts = Math.min(46000, extra.maxVerts ?? 46000);
   const smoothIters = extra.smoothIterations ?? 1;
-  const smoothFactor = extra.smoothFactor ?? 0.2;
+  const smoothFactor = extra.smoothFactor ?? 0.16;
+  const stlArg = extra.outputStlPath ? ` --output-stl "${extra.outputStlPath}"` : '';
   const aspectArg =
     extra.aspectRatioTarget && extra.aspectRatioTarget.length === 3
       ? ` --aspect-target ${extra.aspectRatioTarget.map((n) => Number(n).toFixed(4)).join(',')}`
       : '';
-  const cmd = `C:\\Blender\\blender-4.3.2-windows-x64\\blender.exe --background --python C:\\Blender\\blender_postprocess.py -- --input "${inPath}" --output-glb "${outPath}" --target-mm ${targetMm} --grid-res ${gridRes} --max-verts ${maxVerts} --smooth-iters ${smoothIters} --smooth-factor ${smoothFactor}${aspectArg}`;
+  const cmd = `C:\\Blender\\blender-4.3.2-windows-x64\\blender.exe --background --python C:\\Blender\\blender_postprocess.py -- --input "${inPath}" --output-glb "${outPath}"${stlArg} --target-mm ${targetMm} --grid-res ${gridRes} --stl-max-verts ${stlMaxVerts} --max-verts ${maxVerts} --smooth-iters ${smoothIters} --smooth-factor ${smoothFactor}${aspectArg}`;
   try {
     const { stdout: out } = await execFileAsync(
       'ssh',
       ['-n', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', sshHost, cmd],
-      { timeout: 45_000, maxBuffer: 10 * 1024 * 1024 },
+      { timeout: 60_000, maxBuffer: 10 * 1024 * 1024 },
     );
     const marker = 'BLENDER_POSTPROCESS_JSON:';
     const idx = out.indexOf(marker);
@@ -320,10 +325,11 @@ export async function runBlenderRefineOnAlienPc({
   rawGlbFilename,
   name = 'refined-model',
   targetMm = 120,
-  gridRes = 320,
-  maxVerts = 45000,
+  gridRes = 480,
+  stlMaxVerts = 160000,
+  maxVerts = 46000,
   smoothIterations = 1,
-  smoothFactor = 0.25,
+  smoothFactor = 0.16,
   aspectRatioTarget,
   localOutDir,
   skipScp = false,
@@ -339,6 +345,7 @@ export async function runBlenderRefineOnAlienPc({
 } & BlenderRemeshOptions): Promise<ForgePipelineResult> {
   const label = (name?.trim() || 'refined-model').slice(0, 80);
   const slug = slugify(label);
+  const stlFilename = `${dateStamp()}-${slug}.stl`;
   let targetRaw = rawGlbFilename?.trim() || '';
   if (!targetRaw || /[^a-zA-Z0-9_.-]/.test(targetRaw)) {
     const { stdout: listOut } = await execFileAsync(
@@ -372,7 +379,14 @@ export async function runBlenderRefineOnAlienPc({
     targetMm,
     gridRes,
     sshHost,
-    { maxVerts, smoothIterations, smoothFactor, aspectRatioTarget },
+    {
+      stlMaxVerts,
+      maxVerts,
+      smoothIterations,
+      smoothFactor,
+      aspectRatioTarget,
+      outputStlPath: skipScp ? undefined : `C:/Users/matth/Documents/ShapeCast/${stlFilename}`,
+    },
   );
   if (!post.ok) {
     throw new Error(`Blender refinement failed on ${targetRaw}`);
@@ -386,17 +400,18 @@ export async function runBlenderRefineOnAlienPc({
   if (!prepared.manifold.ok) {
     throw new Error(`Refined mesh failed manifold check: ${prepared.manifold.errors.join('; ')}`);
   }
-  const stlFilename = `${dateStamp()}-${slug}.stl`;
   const stlBuf = writeBinaryStl(prepared.tris, label);
+  const directStlWritten = Boolean(post.summary?.stl_written);
   const delivery = await deliverStlToAlienPc(stlBuf, stlFilename, {
     localOutDir,
-    skipScp,
+    skipScp: skipScp || directStlWritten,
     sshHost,
   });
   return {
     ...prepared,
     name: label,
     ...delivery,
+    deliveredToAlienPc: directStlWritten || delivery.deliveredToAlienPc,
     rawGlbFilename: targetRaw,
     qualityMetrics: post.summary?.quality_metrics ?? undefined,
   };
@@ -468,6 +483,7 @@ print('BLENDER_SCRIPT_OK')
   }
 
   // Also run blender_postprocess on the exported GLB so it is voxel-remeshed & smoothed in Blender
+  const stlFilename = `${dateStamp()}-${slug}.stl`;
   const postGlbFilename = `${runId}_post.glb`;
   const post = await runBlenderPostProcessOnAlienPc(
     outGlbFilename,
@@ -476,6 +492,7 @@ print('BLENDER_SCRIPT_OK')
     targetMm,
     gridRes,
     sshHost,
+    { outputStlPath: skipScp ? undefined : `C:/Users/matth/Documents/ShapeCast/${stlFilename}` },
   );
   const finalGlbName = post.ok ? postGlbFilename : outGlbFilename;
   const glbBytes = await fetchComfyView(comfyUrl, finalGlbName, 'shapecast', 'output');
@@ -486,17 +503,18 @@ print('BLENDER_SCRIPT_OK')
   if (!prepared.manifold.ok) {
     throw new Error(`Mesh repair failed manifold check: ${prepared.manifold.errors.join('; ')}`);
   }
-  const stlFilename = `${dateStamp()}-${slug}.stl`;
   const stlBuf = writeBinaryStl(prepared.tris, label);
+  const directStlWritten = Boolean(post.summary?.stl_written);
   const delivery = await deliverStlToAlienPc(stlBuf, stlFilename, {
     localOutDir,
-    skipScp,
+    skipScp: skipScp || directStlWritten,
     sshHost,
   });
   return {
     ...prepared,
     name: label,
     ...delivery,
+    deliveredToAlienPc: directStlWritten || delivery.deliveredToAlienPc,
     rawGlbFilename: outGlbFilename,
     qualityMetrics: post.summary?.quality_metrics ?? undefined,
   };
@@ -511,13 +529,14 @@ export async function runForgePipeline(opts: ForgePipelineOptions): Promise<Forg
     targetMm = 120,
     name,
     seed = 731,
-    gridRes = 340,
+    gridRes = 450,
+    stlMaxVerts = 160000,
     maxVerts = 46000,
     smoothIterations = 1,
-    smoothFactor = 0.2,
+    smoothFactor = 0.16,
     aspectRatioTarget,
-    octreeResolution = 352,
-    steps = 32,
+    octreeResolution = 448,
+    steps = 36,
     localOutDir,
     skipScp = false,
     pollMs = 1500,
@@ -585,10 +604,12 @@ export async function runForgePipeline(opts: ForgePipelineOptions): Promise<Forg
   const hyOut = await runComfyWorkflow(comfyUrl, hyWf, { pollMs });
   const glbFile = extractSavedFile(hyOut['10'], `${runId}_00001_.glb`);
 
-  // 4. Blender 4.3 headless post-process (OpenVDB Voxel Remesh + Smooth) + watertight manifold repair & STL delivery
+  // 4. Blender 4.3 headless post-process (OpenVDB Voxel Remesh + Dual-Resolution STL/GLB export)
   onStage?.('repair_and_export');
+  const stlFilename = `${dateStamp()}-${slug}.stl`;
   let glbBytes: Uint8Array;
   let qualityMetrics: Record<string, any> | undefined;
+  let directStlWritten = false;
   if (!skipScp) {
     const blenderGlbName = `${runId}_blender.glb`;
     const post = await runBlenderPostProcessOnAlienPc(
@@ -598,8 +619,16 @@ export async function runForgePipeline(opts: ForgePipelineOptions): Promise<Forg
       targetMm,
       gridRes,
       undefined,
-      { maxVerts, smoothIterations, smoothFactor, aspectRatioTarget },
+      {
+        stlMaxVerts,
+        maxVerts,
+        smoothIterations,
+        smoothFactor,
+        aspectRatioTarget,
+        outputStlPath: `C:/Users/matth/Documents/ShapeCast/${stlFilename}`,
+      },
     );
+    directStlWritten = Boolean(post.summary?.stl_written);
     qualityMetrics = {
       ...(post.summary?.quality_metrics ?? {}),
       studioPrep: studioProvider,
@@ -621,14 +650,17 @@ export async function runForgePipeline(opts: ForgePipelineOptions): Promise<Forg
     throw new Error(`Mesh repair failed manifold check: ${prepared.manifold.errors.join('; ')}`);
   }
 
-  const stlFilename = `${dateStamp()}-${slug}.stl`;
   const stlBuf = writeBinaryStl(prepared.tris, label);
-  const delivery = await deliverStlToAlienPc(stlBuf, stlFilename, { localOutDir, skipScp });
+  const delivery = await deliverStlToAlienPc(stlBuf, stlFilename, {
+    localOutDir,
+    skipScp: skipScp || directStlWritten,
+  });
 
   return {
     ...prepared,
     name: label,
     ...delivery,
+    deliveredToAlienPc: directStlWritten || delivery.deliveredToAlienPc,
     rawGlbFilename: glbFile.filename,
     qualityMetrics,
   };

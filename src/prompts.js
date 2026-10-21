@@ -133,13 +133,13 @@ Return ONLY a JSON object matching this exact schema:
   "action": "accept" | "refine_remesh" | "regenerate_mesh",
   "refinedPrompt": string (enriched prompt emphasizing missing details and crisp edges),
   "remeshParams": {
-    "gridRes": integer (260 to 340, use 320 for high-detail refinement),
-    "maxVerts": integer (45000 to 60000, use 58000 for high-detail refinement),
+    "gridRes": integer (360 to 500, use 480 for ultra-crisp architectural/hard-surface refinement),
+    "maxVerts": integer (45000 to 46000),
     "smoothIterations": integer (0 to 4, use 1 for crisp hard-surface or 2 for organic),
-    "smoothFactor": number (0.15 to 0.5, use 0.22 for crisp creases),
-    "aspectRatioTarget": [1.0, number (0.2 to 1.0), number (0.15 to 1.2)]
+    "smoothFactor": number (0.10 to 0.5, use 0.16 for ultra-crisp creases),
+    "aspectRatioTarget": [1.0, number (0.2 to 1.0), number (0.15 to 1.5)]
   },
-  "octreeResolution": integer (320 to 384),
-  "steps": integer (30 to 45)
+  "octreeResolution": integer (448 to 512),
+  "steps": integer (36 to 45)
 }`;
 }

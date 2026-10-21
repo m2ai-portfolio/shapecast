@@ -28,12 +28,13 @@ def parse_args():
         "output_glb": "",
         "output_stl": "",
         "target_mm": 120.0,
-        "grid_res": 340,
-        "max_verts": 48000,
+        "grid_res": 450,
+        "stl_max_verts": 160000,
+        "max_verts": 46000,
         "smooth_iters": 1,
-        "smooth_factor": 0.22,
+        "smooth_factor": 0.16,
         "sharpen_iters": 1,
-        "sharpen_factor": 0.28,
+        "sharpen_factor": 0.30,
         "planar_deg": 0.0,
         "aspect_target": "",
     }
@@ -54,6 +55,9 @@ def parse_args():
             i += 2
         elif a == "--grid-res" and i + 1 < len(argv):
             args["grid_res"] = int(argv[i + 1])
+            i += 2
+        elif a == "--stl-max-verts" and i + 1 < len(argv):
+            args["stl_max_verts"] = int(argv[i + 1])
             i += 2
         elif a == "--max-verts" and i + 1 < len(argv):
             args["max_verts"] = int(argv[i + 1])
@@ -292,11 +296,11 @@ def main():
     obj.location = (-cx, -cy, -bmin[2])
     bpy.ops.object.transform_apply(location=True, rotation=False, scale=False)
 
-    # 1. Ultra-fine OpenVDB Voxel Remesh (default grid_res=380 -> ~0.35 mm voxels)
+    # 1. Ultra-fine OpenVDB Voxel Remesh (default grid_res=450 -> ~0.26 mm voxels)
     bmin, bmax = get_world_bbox(obj)
     max_span = max(bmax[0] - bmin[0], bmax[1] - bmin[1], bmax[2] - bmin[2], 10.0)
-    fine_res = max(220, min(440, int(args["grid_res"])))
-    voxel_size = max(0.18, max_span / float(fine_res))
+    fine_res = max(220, min(520, int(args["grid_res"])))
+    voxel_size = max(0.14, max_span / float(fine_res))
 
     remesh = obj.modifiers.new(name="ShapeCastVoxelRemesh", type="REMESH")
     remesh.mode = "VOXEL"
@@ -335,40 +339,7 @@ def main():
         sharpen.iterations = max(1, min(4, int(args["sharpen_iters"])))
         bpy.ops.object.modifier_apply(modifier=sharpen.name)
 
-    # 4a. Planar Decimate on near-coplanar micro-faces so walls/rafters/trim form crisp flat facets like Meshy
-    if args.get("planar_deg", 0) > 0:
-        import math
-        planar = main_obj.modifiers.new(name="ShapeCastPlanar", type="DECIMATE")
-        planar.decimate_type = "DISSOLVE"
-        planar.angle_limit = math.radians(max(1.0, min(8.0, float(args["planar_deg"]))))
-        bpy.ops.object.modifier_apply(modifier=planar.name)
-        tri_pre = main_obj.modifiers.new(name="ShapeCastTriPre", type="TRIANGULATE")
-        bpy.ops.object.modifier_apply(modifier=tri_pre.name)
-
-    # 4b. Adaptive QEM Decimate (Collapse) so vertex count <= max_verts (~48,000) for Uint16 packing
-    cur_verts = len(main_obj.data.vertices)
-    max_v = max(15000, min(63000, int(args["max_verts"])))
-    if cur_verts > max_v:
-        dec = main_obj.modifiers.new(name="ShapeCastDecimate", type="DECIMATE")
-        dec.decimate_type = "COLLAPSE"
-        dec.ratio = max(0.05, min(0.95, float(max_v) / float(cur_verts)))
-        dec.use_collapse_triangulate = True
-        bpy.ops.object.modifier_apply(modifier=dec.name)
-
-    tri = main_obj.modifiers.new(name="ShapeCastTriangulate", type="TRIANGULATE")
-    bpy.ops.object.modifier_apply(modifier=tri.name)
-
-    # 5. Post-decimation 3D Unsharp Crease Enhancer on macro rafters, window frames & trim
-    if args.get("sharpen_iters", 0) > 0 and args.get("sharpen_factor", 0) > 0:
-        sharpen_creases_bmesh(
-            main_obj,
-            iterations=max(2, int(args["sharpen_iters"]) * 2),
-            strength=max(0.25, float(args["sharpen_factor"])),
-        )
-
-    manifold_ok = clean_non_manifold_bmesh(main_obj)
-
-    # Re-scale exact target_mm (and optional aspect_target [1.0, width_ratio, height_ratio]) and ground at Z=0
+    # Apply exact target_mm (and optional aspect_target [1.0, width_ratio, height_ratio]) and ground Z=0 before export split
     bmin, bmax = get_world_bbox(main_obj)
     sx = max(bmax[0] - bmin[0], 1e-6)
     sy = max(bmax[1] - bmin[1], 1e-6)
@@ -380,7 +351,6 @@ def main():
         try:
             parts_ar = [float(x.strip()) for x in args["aspect_target"].split(",") if x.strip()]
             if len(parts_ar) == 3 and parts_ar[0] > 0 and parts_ar[1] > 0 and parts_ar[2] > 0:
-                # Normalize relative to major horizontal axis
                 r_width = parts_ar[1] / parts_ar[0]
                 r_height = parts_ar[2] / parts_ar[0]
                 target_major = args["target_mm"]
@@ -402,6 +372,85 @@ def main():
     main_obj.location = (-cx, -cy, -bmin[2])
     bpy.ops.object.transform_apply(location=True, rotation=False, scale=False)
 
+    # 4a. Planar Decimate on near-coplanar micro-faces if requested
+    if args.get("planar_deg", 0) > 0:
+        import math
+        planar = main_obj.modifiers.new(name="ShapeCastPlanar", type="DECIMATE")
+        planar.decimate_type = "DISSOLVE"
+        planar.angle_limit = math.radians(max(1.0, min(8.0, float(args["planar_deg"]))))
+        bpy.ops.object.modifier_apply(modifier=planar.name)
+        tri_pre = main_obj.modifiers.new(name="ShapeCastTriPre", type="TRIANGULATE")
+        bpy.ops.object.modifier_apply(modifier=tri_pre.name)
+
+    # 4b. Tier 1: Ultra-HD Decimate (~160,000 verts / ~320,000 tris) for direct AlienPC STL printing
+    cur_verts = len(main_obj.data.vertices)
+    stl_max_v = max(46000, min(300000, int(args.get("stl_max_verts", 160000))))
+    if cur_verts > stl_max_v:
+        dec_hd = main_obj.modifiers.new(name="ShapeCastDecimateHD", type="DECIMATE")
+        dec_hd.decimate_type = "COLLAPSE"
+        dec_hd.ratio = max(0.05, min(0.98, float(stl_max_v) / float(cur_verts)))
+        dec_hd.use_collapse_triangulate = True
+        bpy.ops.object.modifier_apply(modifier=dec_hd.name)
+
+    tri_hd = main_obj.modifiers.new(name="ShapeCastTriHD", type="TRIANGULATE")
+    bpy.ops.object.modifier_apply(modifier=tri_hd.name)
+
+    if args.get("sharpen_iters", 0) > 0 and args.get("sharpen_factor", 0) > 0:
+        sharpen_creases_bmesh(
+            main_obj,
+            iterations=max(2, int(args["sharpen_iters"]) * 2),
+            strength=max(0.30, float(args["sharpen_factor"])),
+        )
+
+    clean_non_manifold_bmesh(main_obj)
+
+    # Re-ground Z=0 before Ultra-HD STL export
+    bmin, bmax = get_world_bbox(main_obj)
+    cx = 0.5 * (bmin[0] + bmax[0])
+    cy = 0.5 * (bmin[1] + bmax[1])
+    main_obj.location = (-cx, -cy, -bmin[2])
+    bpy.ops.object.transform_apply(location=True, rotation=False, scale=False)
+
+    stl_faces = len(main_obj.data.polygons)
+    stl_vertices = len(main_obj.data.vertices)
+    stl_written = False
+    if args["output_stl"]:
+        os.makedirs(os.path.dirname(os.path.abspath(args["output_stl"])), exist_ok=True)
+        bpy.ops.wm.stl_export(
+            filepath=args["output_stl"],
+            export_selected_objects=True,
+            ascii_format=False,
+        )
+        stl_written = os.path.exists(args["output_stl"])
+
+    # 5. Tier 2: Adaptive QEM Decimate to <= max_verts (~46,000 verts / ~92,000 tris) for fast MCP preview
+    cur_verts = len(main_obj.data.vertices)
+    max_v = max(15000, min(63000, int(args["max_verts"])))
+    if cur_verts > max_v:
+        dec = main_obj.modifiers.new(name="ShapeCastDecimate", type="DECIMATE")
+        dec.decimate_type = "COLLAPSE"
+        dec.ratio = max(0.05, min(0.95, float(max_v) / float(cur_verts)))
+        dec.use_collapse_triangulate = True
+        bpy.ops.object.modifier_apply(modifier=dec.name)
+
+    tri = main_obj.modifiers.new(name="ShapeCastTriangulate", type="TRIANGULATE")
+    bpy.ops.object.modifier_apply(modifier=tri.name)
+
+    if args.get("sharpen_iters", 0) > 0 and args.get("sharpen_factor", 0) > 0:
+        sharpen_creases_bmesh(
+            main_obj,
+            iterations=2,
+            strength=max(0.24, float(args["sharpen_factor"]) * 0.85),
+        )
+
+    manifold_ok = clean_non_manifold_bmesh(main_obj)
+
+    bmin, bmax = get_world_bbox(main_obj)
+    cx = 0.5 * (bmin[0] + bmax[0])
+    cy = 0.5 * (bmin[1] + bmax[1])
+    main_obj.location = (-cx, -cy, -bmin[2])
+    bpy.ops.object.transform_apply(location=True, rotation=False, scale=False)
+
     if args["output_glb"]:
         os.makedirs(os.path.dirname(os.path.abspath(args["output_glb"])), exist_ok=True)
         bpy.ops.export_scene.gltf(
@@ -410,20 +459,18 @@ def main():
             use_selection=True,
         )
 
-    if args["output_stl"]:
-        os.makedirs(os.path.dirname(os.path.abspath(args["output_stl"])), exist_ok=True)
-        bpy.ops.wm.stl_export(
-            filepath=args["output_stl"],
-            export_selected_objects=True,
-            ascii_format=False,
-        )
-
     bmin, bmax = get_world_bbox(main_obj)
     q_metrics = compute_quality_metrics(main_obj)
+    q_metrics["stl_faces"] = stl_faces
+    q_metrics["stl_vertices"] = stl_vertices
+    q_metrics["grid_res"] = fine_res
     summary = {
         "ok": True,
         "manifold": manifold_ok,
         "raw_faces": raw_faces,
+        "stl_faces": stl_faces,
+        "stl_vertices": stl_vertices,
+        "stl_written": stl_written,
         "faces": len(main_obj.data.polygons),
         "vertices": len(main_obj.data.vertices),
         "voxel_size_mm": round(voxel_size, 4),

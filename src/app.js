@@ -140,7 +140,12 @@ function render() {
     const sum = $('forgeSummary');
     if (sum) {
       sum.classList.remove('hidden');
-      sum.textContent = `Hunyuan3D mesh: ${fm.triangleCount.toLocaleString()} tris | ${fm.volumeMl} mL | AlienPC STL: ${fm.stlPath}`;
+      const stlTris = fm.qualityMetrics?.stl_faces;
+      const triLabel =
+        stlTris && stlTris > fm.triangleCount
+          ? `${Number(stlTris).toLocaleString()} STL tris (${fm.triangleCount.toLocaleString()} preview)`
+          : `${fm.triangleCount.toLocaleString()} tris`;
+      sum.textContent = `Hunyuan3D mesh: ${triLabel} | ${fm.volumeMl} mL | AlienPC STL: ${fm.stlPath}`;
     }
     renderChecks(failed);
     $('assumptions').classList.add('hidden');
@@ -413,7 +418,7 @@ function addPhotos(files) {
 }
 
 // ---------- Mesh Forge (Hunyuan3D via MCP) ----------
-const UI_VERSION = '2.7';
+const UI_VERSION = '2.8';
 const STAGE_LABELS = {
   queued: 'Queued on AlienPC...',
   reference_image: '1/3 Step 0 Studio Prep (Gemini / ChatGPT / Flux)...',
@@ -698,19 +703,19 @@ async function runCriticStep({
     if (review.action === 'regenerate_mesh') {
       setBusy(
         true,
-        `Refining via Hunyuan3D HD (octree ${review.octreeResolution || 384}, pass ${pass})...`,
+        `Refining via Hunyuan3D Ultra-HD (octree ${review.octreeResolution || 512}, pass ${pass})...`,
       );
       const studioEngine =
         /** @type {HTMLSelectElement | null} */ ($('studioPrepSelect'))?.value || 'auto';
       const hdSpec = {
         prompt: review.refinedPrompt || state.project.brief || undefined,
         studioEngine,
-        octreeResolution: review.octreeResolution || 384,
-        steps: review.steps || 40,
-        gridRes: rp.gridRes || 320,
-        maxVerts: Math.min(rp.maxVerts || 45000, 48000),
+        octreeResolution: review.octreeResolution || 512,
+        steps: review.steps || 42,
+        gridRes: rp.gridRes || 480,
+        maxVerts: Math.min(rp.maxVerts || 46000, 48000),
         smoothIterations: rp.smoothIterations ?? 1,
-        smoothFactor: rp.smoothFactor ?? 0.22,
+        smoothFactor: rp.smoothFactor ?? 0.16,
         aspectRatioTarget: aspectTarget,
       };
       const startRes = await caps.mcp.callTool(
@@ -733,20 +738,20 @@ async function runCriticStep({
       if (!nextJob) return;
       addChat(
         'claude',
-        `HD Regenerated: ${nextJob.triangleCount.toLocaleString()} tris (${nextJob.bbox.size.map((x) => x.toFixed(1)).join(' x ')} mm).`,
+        `Ultra-HD Regenerated: ${nextJob.triangleCount.toLocaleString()} preview tris / ${(nextJob.qualityMetrics?.stl_faces || nextJob.triangleCount).toLocaleString()} STL tris (${nextJob.bbox.size.map((x) => x.toFixed(1)).join(' x ')} mm).`,
       );
     } else {
       // Fast 3-second Blender 4.3 high-resolution crisp remesh + proportion correction on raw GLB
       setBusy(
         true,
-        `Refining in Blender 4.3 (grid ${rp.gridRes || 320}, crisp creases & true proportions)...`,
+        `Refining in Blender 4.3 (grid ${rp.gridRes || 480}, crisp creases & true proportions)...`,
       );
       const refineSpec = {
         rawGlbFilename: fm?.rawGlbFilename || undefined,
-        gridRes: rp.gridRes || 320,
-        maxVerts: Math.min(rp.maxVerts || 45000, 48000),
+        gridRes: rp.gridRes || 480,
+        maxVerts: Math.min(rp.maxVerts || 46000, 48000),
         smoothIterations: rp.smoothIterations ?? 1,
-        smoothFactor: rp.smoothFactor ?? 0.22,
+        smoothFactor: rp.smoothFactor ?? 0.16,
         aspectRatioTarget: aspectTarget,
       };
       const refStart = await caps.mcp.callTool(

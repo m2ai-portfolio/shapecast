@@ -62,7 +62,7 @@ const json = (
 ) => send(res, status, JSON.stringify(obj), { 'Content-Type': 'application/json', ...headers });
 
 function buildMcp(cfg: ForgeConfig, jobs: JobManager): McpServer {
-  const FORGE_VERSION = '2.7.0';
+  const FORGE_VERSION = '2.8.0';
   const BLENDER_VERSION = '4.3.2';
   const server = new McpServer({ name: 'shapecast-forge', version: FORGE_VERSION });
   const result = (obj: Record<string, unknown>) => ({
@@ -115,7 +115,7 @@ function buildMcp(cfg: ForgeConfig, jobs: JobManager): McpServer {
         seed: z.number().int().optional(),
         octreeResolution: z.number().int().min(192).max(512).optional(),
         steps: z.number().int().min(15).max(60).optional(),
-        gridRes: z.number().int().min(180).max(360).optional(),
+        gridRes: z.number().int().min(180).max(520).optional(),
         maxVerts: z.number().int().min(20000).max(62000).optional(),
         smoothIterations: z.number().int().min(0).max(10).optional(),
         smoothFactor: z.number().min(0.05).max(1.0).optional(),
@@ -223,7 +223,7 @@ function buildMcp(cfg: ForgeConfig, jobs: JobManager): McpServer {
         rawGlbFilename: z.string().max(120).optional(),
         name: z.string().max(80).optional(),
         targetMm: z.number().min(10).max(218).optional(),
-        gridRes: z.number().int().min(200).max(360).optional(),
+        gridRes: z.number().int().min(200).max(520).optional(),
         maxVerts: z.number().int().min(25000).max(62000).optional(),
         smoothIterations: z.number().int().min(0).max(8).optional(),
         smoothFactor: z.number().min(0.05).max(1.0).optional(),

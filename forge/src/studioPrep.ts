@@ -61,7 +61,7 @@ export async function runGeminiStudioPrep({
   apiKey: string;
   timeoutMs?: number;
 }): Promise<StudioPrepResult> {
-  const models = ['gemini-2.5-flash-image', 'gemini-3.1-flash-image'];
+  const models = ['gemini-3.1-flash-image', 'gemini-3-pro-image', 'gemini-2.5-flash-image'];
   const parts: Array<Record<string, unknown>> = [];
   if (photoBytes && photoBytes.byteLength > 0) {
     parts.push({
@@ -134,63 +134,72 @@ export async function runOpenAiStudioPrep({
     prompt,
     Boolean(photoBytes && photoBytes.byteLength > 0),
   );
-  let res: Response;
-  if (photoBytes && photoBytes.byteLength > 0) {
-    const form = new FormData();
-    form.append('model', 'gpt-image-1');
-    form.append('prompt', studioPrompt);
-    form.append('size', '1024x1024');
-    form.append('quality', 'medium');
-    form.append(
-      'image',
-      new Blob([Buffer.from(photoBytes)], { type: 'image/jpeg' }),
-      'reference.jpg',
-    );
-    res = await fetch('https://api.openai.com/v1/images/edits', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey}` },
-      body: form,
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-  } else {
-    res = await fetch('https://api.openai.com/v1/images/generations', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-image-1',
-        prompt: studioPrompt,
-        size: '1024x1024',
-        quality: 'medium',
-      }),
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-  }
-
-  if (!res.ok) {
-    const errBody = await res.text().catch(() => '');
-    throw new Error(`OpenAI gpt-image-1 HTTP ${res.status}: ${errBody.slice(0, 200)}`);
-  }
-  const data = (await res.json()) as any;
-  const first = data?.data?.[0];
-  if (first?.b64_json && typeof first.b64_json === 'string') {
-    const bytes = new Uint8Array(Buffer.from(first.b64_json, 'base64'));
-    if (bytes.byteLength > 256) {
-      return { bytes, ext: 'png', provider: 'openai', model: 'gpt-image-1' };
-    }
-  }
-  if (first?.url && typeof first.url === 'string') {
-    const imgRes = await fetch(first.url, { signal: AbortSignal.timeout(20_000) });
-    if (imgRes.ok) {
-      const bytes = new Uint8Array(await imgRes.arrayBuffer());
-      if (bytes.byteLength > 256) {
-        return { bytes, ext: 'png', provider: 'openai', model: 'gpt-image-1' };
+  const models = ['gpt-image-2.5-sunburst', 'gpt-image-2', 'gpt-image-1'];
+  let lastErr: Error | null = null;
+  for (const model of models) {
+    try {
+      let res: Response;
+      if (photoBytes && photoBytes.byteLength > 0) {
+        const form = new FormData();
+        form.append('model', model);
+        form.append('prompt', studioPrompt);
+        form.append('size', '1024x1024');
+        form.append('quality', 'medium');
+        form.append(
+          'image',
+          new Blob([Buffer.from(photoBytes)], { type: 'image/jpeg' }),
+          'reference.jpg',
+        );
+        res = await fetch('https://api.openai.com/v1/images/edits', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${apiKey}` },
+          body: form,
+          signal: AbortSignal.timeout(timeoutMs),
+        });
+      } else {
+        res = await fetch('https://api.openai.com/v1/images/generations', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model,
+            prompt: studioPrompt,
+            size: '1024x1024',
+            quality: 'medium',
+          }),
+          signal: AbortSignal.timeout(timeoutMs),
+        });
       }
+
+      if (!res.ok) {
+        const errBody = await res.text().catch(() => '');
+        throw new Error(`OpenAI ${model} HTTP ${res.status}: ${errBody.slice(0, 200)}`);
+      }
+      const data = (await res.json()) as any;
+      const first = data?.data?.[0];
+      if (first?.b64_json && typeof first.b64_json === 'string') {
+        const bytes = new Uint8Array(Buffer.from(first.b64_json, 'base64'));
+        if (bytes.byteLength > 256) {
+          return { bytes, ext: 'png', provider: 'openai', model };
+        }
+      }
+      if (first?.url && typeof first.url === 'string') {
+        const imgRes = await fetch(first.url, { signal: AbortSignal.timeout(20_000) });
+        if (imgRes.ok) {
+          const bytes = new Uint8Array(await imgRes.arrayBuffer());
+          if (bytes.byteLength > 256) {
+            return { bytes, ext: 'png', provider: 'openai', model };
+          }
+        }
+      }
+      throw new Error(`OpenAI ${model} returned no image data`);
+    } catch (e) {
+      lastErr = e as Error;
     }
   }
-  throw new Error('OpenAI gpt-image-1 returned no image data');
+  throw lastErr ?? new Error('OpenAI Studio Prep failed');
 }
 
 export async function runStudioPrep(opts: StudioPrepOptions): Promise<StudioPrepResult | null> {

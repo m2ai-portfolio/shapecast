@@ -1,7 +1,7 @@
 /**
  * Server-side Blender 4.3 CAD Python (bpy/bmesh) Architect for ShapeCast Forge.
- * Runs directly on ProBook using Claude Sonnet 4.5 (OpenRouter), GPT-4.1 (OpenAI),
- * or Gemini 2.5 Flash (Google) with 8,192 output tokens—eliminating the Claude.ai
+ * Runs directly on ProBook using Claude Sonnet 5.5 (OpenRouter), GPT-6.1-Sol (OpenAI),
+ * or Gemini 3.8 Flash (Google) with 12,000 output tokens—eliminating the Claude.ai
  * browser artifact iframe's sample.json token limit ("Claude returned no text for this prompt")
  * and automatically self-healing any Blender 4.3 Python runtime errors on AlienPC.
  */
@@ -147,6 +147,7 @@ async function callOpenRouterClaude(
   b64Image: string | null,
   apiKey: string,
   timeoutMs: number,
+  maxTokens = 8192,
 ): Promise<BlenderCadGenResult> {
   const content: any[] = [];
   if (b64Image) {
@@ -164,8 +165,8 @@ async function callOpenRouterClaude(
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: 'anthropic/claude-sonnet-4.5',
-      max_tokens: 8192,
+      model: 'anthropic/claude-sonnet-5.5',
+      max_tokens: maxTokens,
       temperature: 0.2,
       messages: [{ role: 'user', content }],
     }),
@@ -173,15 +174,22 @@ async function callOpenRouterClaude(
   });
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
-    throw new Error(`OpenRouter claude-sonnet-4.5 HTTP ${res.status}: ${errText.slice(0, 200)}`);
+    const affordMatch = errText.match(/can only afford\s+(\d+)/i);
+    if (res.status === 402 && affordMatch && maxTokens > 3500) {
+      const affordable = Math.min(8192, Math.max(0, Number(affordMatch[1]) - 100));
+      if (affordable >= 3500) {
+        return callOpenRouterClaude(prompt, b64Image, apiKey, timeoutMs, affordable);
+      }
+    }
+    throw new Error(`OpenRouter claude-sonnet-5.5 HTTP ${res.status}: ${errText.slice(0, 200)}`);
   }
   const data = (await res.json()) as any;
   const raw = data?.choices?.[0]?.message?.content ?? '';
   const parsed = extractBlenderScript(raw);
-  return { ...parsed, provider: 'claude-sonnet-4.5' };
+  return { ...parsed, provider: 'claude-sonnet-5.5' };
 }
 
-async function callOpenAiGpt4(
+async function callOpenAiGpt6Sol(
   prompt: string,
   b64Image: string | null,
   apiKey: string,
@@ -203,24 +211,23 @@ async function callOpenAiGpt4(
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: 'gpt-4.1',
-      max_tokens: 8192,
-      temperature: 0.2,
+      model: 'gpt-6.1-sol',
+      max_completion_tokens: 12000,
       messages: [{ role: 'user', content }],
     }),
     signal: AbortSignal.timeout(timeoutMs),
   });
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
-    throw new Error(`OpenAI gpt-4.1 HTTP ${res.status}: ${errText.slice(0, 200)}`);
+    throw new Error(`OpenAI gpt-6.1-sol HTTP ${res.status}: ${errText.slice(0, 200)}`);
   }
   const data = (await res.json()) as any;
   const raw = data?.choices?.[0]?.message?.content ?? '';
   const parsed = extractBlenderScript(raw);
-  return { ...parsed, provider: 'gpt-4.1' };
+  return { ...parsed, provider: 'gpt-6.1-sol' };
 }
 
-async function callGeminiFlash(
+async function callGemini38Flash(
   prompt: string,
   b64Image: string | null,
   apiKey: string,
@@ -237,14 +244,14 @@ async function callGeminiFlash(
   }
   parts.push({ text: prompt });
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       contents: [{ parts }],
       generationConfig: {
-        maxOutputTokens: 8192,
+        maxOutputTokens: 12000,
         temperature: 0.2,
       },
     }),
@@ -252,14 +259,14 @@ async function callGeminiFlash(
   });
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
-    throw new Error(`Gemini 2.5 Flash HTTP ${res.status}: ${errText.slice(0, 200)}`);
+    throw new Error(`Gemini 3.8 Flash HTTP ${res.status}: ${errText.slice(0, 200)}`);
   }
   const data = (await res.json()) as any;
   const textParts = (data?.candidates?.[0]?.content?.parts ?? [])
     .map((p: any) => p?.text ?? '')
     .join('\n');
   const parsed = extractBlenderScript(textParts);
-  return { ...parsed, provider: 'gemini-2.5-flash' };
+  return { ...parsed, provider: 'gemini-3.8-flash' };
 }
 
 export async function generateBlenderCadScript(
@@ -268,12 +275,12 @@ export async function generateBlenderCadScript(
   ensureForgeEnvLoaded();
   const prompt = buildServerBlenderPrompt(opts);
   const b64Image = cleanBase64Jpeg(opts.photoBase64);
-  const timeoutMs = opts.timeoutMs ?? 55_000;
+  const timeoutMs = opts.timeoutMs ?? 60_000;
   const fallbackName = (opts.brief?.trim() || 'blender-cad-model').slice(0, 50);
 
   const errors: string[] = [];
 
-  // 1. Primary: Claude Sonnet 4.5 via OpenRouter (8,192 output tokens, zero iframe cap)
+  // 1. Primary: Claude Sonnet 5.5 via OpenRouter (8,192 output tokens, zero iframe cap)
   const openRouterKey = process.env.OPENROUTER_API_KEY;
   if (openRouterKey) {
     try {
@@ -284,22 +291,22 @@ export async function generateBlenderCadScript(
     }
   }
 
-  // 2. Fallback 1: OpenAI GPT-4.1 (8,192 output tokens, multimodal)
+  // 2. Fallback 1: OpenAI GPT-6.1-Sol (12,000 output tokens, multimodal)
   const openAiKey = process.env.OPENAI_API_KEY;
   if (openAiKey) {
     try {
-      const r = await callOpenAiGpt4(prompt, b64Image, openAiKey, timeoutMs);
+      const r = await callOpenAiGpt6Sol(prompt, b64Image, openAiKey, timeoutMs);
       return { ...r, name: r.name === 'blender-cad-model' ? fallbackName : r.name };
     } catch (e) {
       errors.push((e as Error).message);
     }
   }
 
-  // 3. Fallback 2: Google Gemini 2.5 Flash (8,192 output tokens, multimodal)
+  // 3. Fallback 2: Google Gemini 3.8 Flash (12,000 output tokens, multimodal)
   const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
   if (geminiKey) {
     try {
-      const r = await callGeminiFlash(prompt, b64Image, geminiKey, timeoutMs);
+      const r = await callGemini38Flash(prompt, b64Image, geminiKey, timeoutMs);
       return { ...r, name: r.name === 'blender-cad-model' ? fallbackName : r.name };
     } catch (e) {
       errors.push((e as Error).message);

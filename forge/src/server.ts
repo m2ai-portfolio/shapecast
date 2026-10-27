@@ -4,7 +4,7 @@
  */
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from 'node:http';
 import { createHash } from 'node:crypto';
-import { mkdirSync, readFileSync, writeFileSync, chmodSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -19,7 +19,12 @@ import {
   type ForgePipelineOptions,
   type ForgePipelineResult,
 } from './comfy.js';
+import { runServerOAuthJsonSample } from './blenderGen.js';
 import { createJobManager, type JobManager } from './jobs.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+export const FORGE_VERSION = '4.0.0';
+export const BLENDER_VERSION = '4.3.2';
 
 export interface ForgeConfig {
   publicUrl: string;
@@ -62,8 +67,6 @@ const json = (
 ) => send(res, status, JSON.stringify(obj), { 'Content-Type': 'application/json', ...headers });
 
 function buildMcp(cfg: ForgeConfig, jobs: JobManager): McpServer {
-  const FORGE_VERSION = '3.1.2';
-  const BLENDER_VERSION = '4.3.2';
   const server = new McpServer({ name: 'shapecast-forge', version: FORGE_VERSION });
   const result = (obj: Record<string, unknown>) => ({
     content: [{ type: 'text' as const, text: JSON.stringify(obj) }],
@@ -387,6 +390,13 @@ export function createForgeServer(cfg: ForgeConfig): Server {
     lastJobFile: cfg.stateFile ? join(dirname(cfg.stateFile), 'last-job.json') : null,
     runner: cfg.pipelineRunner,
   });
+  const uiHtmlPath = join(__dirname, '..', '..', 'index.html');
+  const corsHeaders = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  };
+
   return createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://local');
     const path = url.pathname;
@@ -397,6 +407,236 @@ export function createForgeServer(cfg: ForgeConfig): Server {
       ),
     );
     try {
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204, corsHeaders);
+        res.end();
+        return;
+      }
+
+      // Standalone LAN Web App UI (served at /app, /index.html, or / when browser requests text/html)
+      const acceptHtml = String(req.headers.accept ?? '').includes('text/html');
+      if (
+        req.method === 'GET' &&
+        (path === '/app' ||
+          path === '/index.html' ||
+          path === '/forge/app' ||
+          ((path === '/' || path === '/forge') && acceptHtml))
+      ) {
+        if (existsSync(uiHtmlPath)) {
+          const html = readFileSync(uiHtmlPath, 'utf8');
+          return send(res, 200, html, {
+            'Content-Type': 'text/html; charset=utf-8',
+            ...corsHeaders,
+          });
+        }
+      }
+
+      // Direct LAN REST API (zero MCP / zero Claude.ai artifact middleman)
+      if ((path === '/api/status' || path === '/forge/api/status') && req.method === 'GET') {
+        const st = await comfyStatus(cfg.comfyUrl);
+        const active = jobs.activeJob();
+        const lastDone = jobs.lastCompletedJob();
+        if (active && st.alienpc === 'available') {
+          return json(
+            res,
+            200,
+            {
+              ...st,
+              version: FORGE_VERSION,
+              blender: BLENDER_VERSION,
+              alienpc: 'busy',
+              activeJob: { jobId: active.jobId, stage: active.stage, name: active.name },
+              lastJobId: lastDone?.jobId ?? null,
+            },
+            corsHeaders,
+          );
+        }
+        return json(
+          res,
+          200,
+          {
+            ...st,
+            version: FORGE_VERSION,
+            blender: BLENDER_VERSION,
+            activeJob: active
+              ? { jobId: active.jobId, stage: active.stage, name: active.name }
+              : null,
+            lastJobId: lastDone?.jobId ?? null,
+          },
+          corsHeaders,
+        );
+      }
+
+      if ((path === '/api/generate' || path === '/forge/api/generate') && req.method === 'POST') {
+        const args = JSON.parse((await readBody(req)) || '{}');
+        const r = await jobs.startJob(args);
+        if (!r.ok) {
+          return json(
+            res,
+            200,
+            { ok: false, status: 'error', alienpc: r.alienpc, error: r.reason },
+            corsHeaders,
+          );
+        }
+        return json(
+          res,
+          200,
+          {
+            ok: true,
+            jobId: r.job.jobId,
+            status: r.job.status,
+            stage: r.job.stage,
+            name: r.job.name,
+            targetMm: r.job.targetMm,
+          },
+          corsHeaders,
+        );
+      }
+
+      if ((path === '/api/job' || path === '/forge/api/job') && req.method === 'GET') {
+        const jobId = url.searchParams.get('jobId') || 'latest';
+        const job = jobs.getJob(jobId);
+        if (!job) {
+          return json(
+            res,
+            200,
+            { ok: false, jobId, status: 'not_found', error: `Unknown job ${jobId}` },
+            corsHeaders,
+          );
+        }
+        const elapsedSec = +(((job.finishedAt ?? Date.now()) - job.startedAt) / 1000).toFixed(1);
+        if (job.status === 'running') {
+          return json(
+            res,
+            200,
+            {
+              ok: true,
+              jobId: job.jobId,
+              status: 'running',
+              stage: job.stage,
+              name: job.name,
+              targetMm: job.targetMm,
+              elapsedSec,
+            },
+            corsHeaders,
+          );
+        }
+        if (job.status === 'error' || !job.result) {
+          return json(
+            res,
+            200,
+            {
+              ok: false,
+              jobId: job.jobId,
+              status: 'error',
+              stage: job.stage,
+              name: job.name,
+              elapsedSec,
+              error: job.error ?? 'Generation failed',
+            },
+            corsHeaders,
+          );
+        }
+        const jr = job.result;
+        return json(
+          res,
+          200,
+          {
+            ok: true,
+            jobId: job.jobId,
+            status: 'done',
+            stage: 'done',
+            name: jr.name,
+            targetMm: job.targetMm,
+            elapsedSec,
+            bbox: jr.bbox,
+            volumeMm3: jr.volumeMm3,
+            volumeMl: jr.volumeMl,
+            triangleCount: jr.triangleCount,
+            manifold: jr.manifold,
+            checks: jr.checks,
+            worst: jr.worst,
+            layers: jr.layers,
+            stlFilename: jr.stlFilename,
+            stlPath: jr.stlPath,
+            deliveredToAlienPc: jr.deliveredToAlienPc,
+            rawGlbFilename: jr.rawGlbFilename,
+            qualityMetrics: jr.qualityMetrics,
+            preview: jr.preview,
+          },
+          corsHeaders,
+        );
+      }
+
+      if ((path === '/api/refine' || path === '/forge/api/refine') && req.method === 'POST') {
+        const args = JSON.parse((await readBody(req)) || '{}');
+        try {
+          const jr = await runBlenderRefineOnAlienPc({
+            comfyUrl: cfg.comfyUrl,
+            rawGlbFilename: args.rawGlbFilename,
+            name: args.name ?? 'refined-model',
+            targetMm: args.targetMm ?? 120,
+            gridRes: args.gridRes ?? 512,
+            maxVerts: args.maxVerts ?? 46000,
+            smoothIterations: args.smoothIterations ?? 1,
+            smoothFactor: args.smoothFactor ?? 0.15,
+            aspectRatioTarget: args.aspectRatioTarget,
+            localOutDir: cfg.localOutDir,
+            skipScp: cfg.skipScp,
+          });
+          return json(
+            res,
+            200,
+            {
+              ok: true,
+              status: 'done',
+              name: jr.name,
+              targetMm: args.targetMm ?? 120,
+              bbox: jr.bbox,
+              volumeMm3: jr.volumeMm3,
+              volumeMl: jr.volumeMl,
+              triangleCount: jr.triangleCount,
+              manifold: jr.manifold,
+              checks: jr.checks,
+              worst: jr.worst,
+              layers: jr.layers,
+              stlFilename: jr.stlFilename,
+              stlPath: jr.stlPath,
+              deliveredToAlienPc: jr.deliveredToAlienPc,
+              rawGlbFilename: jr.rawGlbFilename,
+              qualityMetrics: jr.qualityMetrics,
+              preview: jr.preview,
+            },
+            corsHeaders,
+          );
+        } catch (e) {
+          return json(
+            res,
+            200,
+            { ok: false, status: 'error', error: (e as Error).message },
+            corsHeaders,
+          );
+        }
+      }
+
+      if ((path === '/api/sample' || path === '/forge/api/sample') && req.method === 'POST') {
+        const args = JSON.parse((await readBody(req)) || '{}');
+        try {
+          const out = await runServerOAuthJsonSample({
+            prompt: String(args.prompt ?? ''),
+            imagesBase64: Array.isArray(args.images) ? args.images : [],
+          });
+          return json(res, 200, { ok: true, ...out }, corsHeaders);
+        } catch (e) {
+          return json(
+            res,
+            200,
+            { ok: false, error: (e as Error).message },
+            corsHeaders,
+          );
+        }
+      }
+
       if (
         req.method === 'GET' &&
         (path === '/.well-known/oauth-protected-resource' ||
@@ -464,7 +704,7 @@ export function createForgeServer(cfg: ForgeConfig): Server {
         await server.connect(transport);
         return await transport.handleRequest(req, res, body);
       }
-      if (path === '/healthz') return json(res, 200, { ok: true });
+      if (path === '/healthz') return json(res, 200, { ok: true, version: FORGE_VERSION });
       return json(res, 404, { error: 'not found' });
     } catch (e) {
       const status = (e as { status?: number }).status ?? 500;
@@ -486,6 +726,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     return v;
   };
   const port = Number(process.env.FORGE_PORT ?? 3420);
+  const host = process.env.FORGE_HOST ?? '0.0.0.0';
   const srv = createForgeServer({
     publicUrl: need('FORGE_PUBLIC_URL'),
     clientId: need('FORGE_CLIENT_ID'),
@@ -494,7 +735,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     comfyUrl: process.env.FORGE_COMFY_URL ?? 'http://10.0.0.24:8188',
     stateFile: join(homedir(), '.local/state/shapecast-forge/oauth.json'),
   });
-  srv.listen(port, '127.0.0.1', () =>
-    console.log(`shapecast-forge listening on 127.0.0.1:${port}`),
+  srv.listen(port, host, () =>
+    console.log(`shapecast-forge v${FORGE_VERSION} listening on ${host}:${port}`),
   );
 }

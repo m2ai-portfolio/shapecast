@@ -209,6 +209,7 @@ export function createJobManager(opts: JobManagerOptions) {
             previousCode: autoCfg.previousCode,
             userFeedback: autoCfg.userFeedback,
             photoBase64: autoCfg.photoBase64,
+            preferredProvider: autoCfg.preferredProvider,
             name: label,
             targetMm,
             localOutDir: opts.localOutDir,

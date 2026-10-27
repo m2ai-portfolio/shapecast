@@ -15,7 +15,7 @@ import {
   type PreparedMeshResult,
 } from './mesh.js';
 import { runStudioPrep, type StudioEngine } from './studioPrep.js';
-import { generateBlenderCadScript } from './blenderGen.js';
+import { generateBlenderCadScript, type CadProviderChoice } from './blenderGen.js';
 
 const execFileAsync = promisify(execFile);
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -604,6 +604,7 @@ export async function runAutoBlenderCadOnAlienPc({
   previousCode,
   userFeedback,
   photoBase64,
+  preferredProvider,
   name,
   targetMm = 120,
   localOutDir,
@@ -616,6 +617,7 @@ export async function runAutoBlenderCadOnAlienPc({
   previousCode?: string;
   userFeedback?: string;
   photoBase64?: string;
+  preferredProvider?: CadProviderChoice;
   name?: string;
   targetMm?: number;
   localOutDir?: string;
@@ -629,6 +631,7 @@ export async function runAutoBlenderCadOnAlienPc({
     previousCode,
     userFeedback,
     photoBase64,
+    preferredProvider,
   });
 
   onStage?.('mesh_generation');
@@ -662,6 +665,7 @@ export async function runAutoBlenderCadOnAlienPc({
       previousCode: gen.pythonCode,
       userFeedback,
       photoBase64,
+      preferredProvider,
       errorFeedback: (firstErr as Error).message,
     });
     onStage?.('mesh_generation');

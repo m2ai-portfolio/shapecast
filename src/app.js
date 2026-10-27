@@ -103,16 +103,20 @@ function setMode(nextMode) {
   $('modeBtnForge')?.classList.toggle('primary', state.mode === 'forge');
   $('modeBtnBlender')?.classList.toggle('primary', state.mode === 'blender');
   $('modeBtnBlocks')?.classList.toggle('primary', state.mode === 'blocks');
+  $('studioPrepWrap')?.classList.toggle('hidden', state.mode !== 'forge');
+  $('blenderOptionsWrap')?.classList.toggle('hidden', state.mode !== 'blender');
   if (state.mode === 'blocks' && state.forgeMesh) {
     state.forgeMesh = null;
     render();
   }
   if (state.mode === 'forge') {
-    note('Photos are shrunk on-device (<= 700 KB JPEG) and sent directly to Mesh Forge.');
+    note('Organic/Sculpt track: Step 0 Studio Prep -> Hunyuan3D 2.1 (512 octree) -> AlienPC STL.');
   } else if (state.mode === 'blender') {
-    note('Claude writes a Blender 4.3 bpy script and runs it headless on AlienPC.');
+    note(
+      'Hard-Surface CAD track: OAuth Sonnet 5.5 / GPT-6.1-Sol writes exact Blender 4.3 bpy CAD (zero voxel remeshing).',
+    );
   } else if (!imageLimits) {
-    note('Photos cannot be sent to Claude from this artifact yet; the brief alone is used.');
+    note('Parametric Blocks track.');
   }
   setBusy(Boolean(state.inference), $('status').textContent);
 }
@@ -421,8 +425,132 @@ function addPhotos(files) {
   renderThumbs();
 }
 
-// ---------- Mesh Forge (Hunyuan3D via MCP) ----------
-const UI_VERSION = '3.1';
+// ---------- Mesh Forge & Standalone LAN Studio ----------
+const UI_VERSION = '4.0';
+const CAD_PRESETS = {
+  star_destroyer_engines: {
+    name: 'stardestroyer-engines-cad',
+    scaleRef: '120 mm wide',
+    brief:
+      'Imperial Star Destroyer rear diamond-wedge engine baffle plate (120 mm wide x 32 mm tall) with raised perimeter armor bevel frame, 3 large concentric 64-segment heavy ion thrusters with 28 radial internal turbine cooling vanes, 4 secondary thrusters on stepped mounting plates with micro-capacitor greeble blocks, radial structural struts around the center thruster, and 7-slat wingtip cooling louver arrays on both sides.',
+  },
+  star_destroyer_bridge: {
+    name: 'stardestroyer-command-bridge-cad',
+    scaleRef: '110 mm wide',
+    brief:
+      'Imperial Star Destroyer T-shaped command bridge tower sub-assembly with angled trapezoidal central neck, wide armored bridge hammerhead superstructure, forward recessed viewport trenches, twin 64-segment faceted geodesic shield generator domes on octagonal pedestals atop the roof, and dense multi-tiered surface panel trenches and cooling louver arrays.',
+  },
+  scifi_turret_battery: {
+    name: 'quad-turbolaser-turret-cad',
+    scaleRef: '85 mm wide',
+    brief:
+      'Heavy sci-fi quad-barrel turbolaser turret battery on an octagonal armored rotating base with perimeter bolt flanges, twin elevated trunnion recoil housings, 4 concentric 64-segment stepped rifle barrels with muzzle flash suppressors and cooling jackets, top rangefinder optics pod, and rear heat-sink louver slats.',
+  },
+  mech_bracket: {
+    name: 'precision-servo-bracket-cad',
+    scaleRef: '90 mm longest side',
+    brief:
+      'Precision L-shaped heavy-duty mechanical mounting bracket (90 mm x 60 mm x 50 mm, 5 mm wall thickness) with twin 45-degree triangular gusset ribs, 4 countersunk M5 base mounting bores with raised boss collars, and a central 24 mm flanged bearing bore on the vertical face.',
+  },
+};
+
+function createLanMcpAdapter() {
+  const apiBase = window.location.pathname.startsWith('/forge') ? '/forge/api' : '/api';
+  return {
+    isLanDirect: true,
+    async callTool(_server, toolName, args = {}) {
+      if (toolName === 'forge_status') {
+        const r = await fetch(`${apiBase}/status`, { cache: 'no-store' });
+        return { payload: await r.json() };
+      }
+      if (toolName === 'forge_generate') {
+        const r = await fetch(`${apiBase}/generate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(args),
+        });
+        return { payload: await r.json() };
+      }
+      if (toolName === 'forge_job') {
+        const q = encodeURIComponent(args.jobId || 'latest');
+        const r = await fetch(`${apiBase}/job?jobId=${q}`, { cache: 'no-store' });
+        return { payload: await r.json() };
+      }
+      if (toolName === 'forge_refine') {
+        const r = await fetch(`${apiBase}/refine`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(args),
+        });
+        return { payload: await r.json() };
+      }
+      throw new Error(`Unsupported tool: ${toolName}`);
+    },
+  };
+}
+
+function createLanSampleAdapter() {
+  const apiBase = window.location.pathname.startsWith('/forge') ? '/forge/api' : '/api';
+  return {
+    async limits() {
+      return {
+        images: {
+          maxCount: 4,
+          maxBytes: 5_000_000,
+          maxDimension: 1568,
+          mediaTypes: ['image/jpeg', 'image/png', 'image/webp'],
+        },
+      };
+    },
+    async json(prompt, opts = {}) {
+      const images = [];
+      if (Array.isArray(opts.images)) {
+        for (const img of opts.images) {
+          if (typeof img === 'string') {
+            images.push(img);
+          } else if (img instanceof Blob) {
+            const shrunk = await shrinkPhotoForForge(img);
+            images.push(shrunk.base64);
+          } else if (img?.data) {
+            images.push(img.data);
+          }
+        }
+      }
+      const r = await fetch(`${apiBase}/sample`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, images }),
+        signal: opts.signal,
+      });
+      const d = await r.json();
+      if (!d?.ok) throw new Error(d?.error || 'OAuth sample request failed');
+      if (opts.onText && d.text) opts.onText({ text: d.text });
+      return d.json;
+    },
+  };
+}
+
+function createBrowserDownloadsAdapter() {
+  return {
+    async save({ filename, data }) {
+      const blob =
+        data instanceof Blob
+          ? data
+          : new Blob([data], {
+              type: filename.endsWith('.json') ? 'application/json' : 'application/octet-stream',
+            });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      return { status: 'saved' };
+    },
+  };
+}
 const STAGE_LABELS = {
   queued: 'Queued on AlienPC...',
   reference_image: '1/3 Step 0 Studio Prep (Gemini / ChatGPT / Flux)...',
@@ -431,7 +559,7 @@ const STAGE_LABELS = {
 };
 const BLENDER_STAGE_LABELS = {
   queued: 'Queued on AlienPC...',
-  reference_image: '1/2 Generating Blender 4.3 CAD Python (bpy) script on Forge...',
+  reference_image: '1/2 Generating Blender 4.3 CAD Python (bpy) via OAuth Subscription...',
   mesh_generation: '2/2 Running headless Blender 4.3 Exact CAD export on AlienPC...',
   repair_and_export: '2/2 Exporting razor-sharp CAD STL on AlienPC...',
 };
@@ -993,17 +1121,20 @@ async function runBlenderGenerate(userFeedback = '') {
     state.project.name = derivedName;
     if ($('projectName')) $('projectName').value = derivedName;
 
+    const preferredProvider =
+      /** @type {HTMLSelectElement | null} */ ($('cadProviderSelect'))?.value || 'auto';
+
     setBusy(
       true,
       isRevision
-        ? '1/2 Refining Blender 4.3 CAD Python (bpy) script on ShapeCast Forge...'
-        : '1/2 Writing razor-sharp Blender 4.3 CAD Python (bpy) script on ShapeCast Forge...',
+        ? `1/2 Refining Blender 4.3 CAD Python (bpy) script [${preferredProvider}]...`
+        : `1/2 Writing razor-sharp Blender 4.3 CAD Python (bpy) script [${preferredProvider}]...`,
     );
     addChat(
       'user',
       isRevision
-        ? `Refine Blender 3D CAD: ${userFeedback || 'Add finer hard-surface details & greebles'}`
-        : `Blender 3D CAD (${targetMm} mm): ${brief || '(from reference photo)'}${photoBlob ? ' [+photo]' : ''}`,
+        ? `Refine Blender 3D CAD [${preferredProvider}]: ${userFeedback || 'Add finer hard-surface details & greebles'}`
+        : `Blender 3D CAD (${targetMm} mm, ${preferredProvider}): ${brief || '(from reference photo)'}${photoBlob ? ' [+photo]' : ''}`,
     );
 
     const autoPayloadB64 = btoa(
@@ -1015,6 +1146,7 @@ async function runBlenderGenerate(userFeedback = '') {
             previousCode: isRevision ? state.lastBlenderCode : '',
             userFeedback,
             photoBase64,
+            preferredProvider,
           }),
         ),
       ),
@@ -1040,6 +1172,7 @@ async function runBlenderGenerate(userFeedback = '') {
     if (!out) return;
     if (out.qualityMetrics?.pythonCode) {
       state.lastBlenderCode = out.qualityMetrics.pythonCode;
+      $('rawReply').textContent = out.qualityMetrics.pythonCode;
     }
     const providerTag = out.qualityMetrics?.cadProvider
       ? ` [${out.qualityMetrics.cadProvider}]`
@@ -1396,6 +1529,19 @@ async function init() {
   $('modeBtnForge')?.addEventListener('click', () => setMode('forge'));
   $('modeBtnBlender')?.addEventListener('click', () => setMode('blender'));
   $('modeBtnBlocks')?.addEventListener('click', () => setMode('blocks'));
+  $('cadPresetSelect')?.addEventListener('change', (e) => {
+    const key = /** @type {HTMLSelectElement} */ (e.target).value;
+    const preset = CAD_PRESETS[key];
+    if (preset) {
+      state.project.name = preset.name;
+      state.project.scaleRef = preset.scaleRef;
+      state.project.brief = preset.brief;
+      $('projectName').value = preset.name;
+      $('scaleRef').value = preset.scaleRef;
+      $('brief').value = preset.brief;
+      metaChange();
+    }
+  });
   $('photoInput').addEventListener('change', (e) => {
     const input = /** @type {HTMLInputElement} */ (e.target);
     addPhotos([...input.files]);
@@ -1513,9 +1659,18 @@ async function init() {
       caps[n] = (await window.claude?.use(n)) ?? null;
     }),
   );
+  if (!caps.mcp) {
+    caps.mcp = createLanMcpAdapter();
+  }
+  if (!caps.sample) {
+    caps.sample = createLanSampleAdapter();
+  }
+  if (!caps.downloads) {
+    caps.downloads = createBrowserDownloadsAdapter();
+  }
   if (caps.mcp) {
     await refreshForgeStatus();
-    note('Photos are shrunk on-device (<= 700 KB JPEG) and sent directly to Mesh Forge.');
+    setMode(state.mode);
   } else if (modeSel) {
     state.mode = 'blocks';
     modeSel.value = 'blocks';
@@ -1548,9 +1703,16 @@ async function init() {
     if (docs.length) await openProject(docs[0].id);
     else installProject(state.project);
   } else {
-    $('localBanner').classList.remove('hidden');
+    if (!caps.mcp?.isLanDirect) {
+      $('localBanner').classList.remove('hidden');
+    } else if ($('saveState')) {
+      $('saveState').textContent = 'LAN Direct (OAuth)';
+    }
     saveCtl?.dispose();
     saveCtl = makeSaveCtl(state.project);
+    if (caps.mcp?.isLanDirect && $('saveState')) {
+      $('saveState').textContent = 'LAN Direct (OAuth)';
+    }
   }
   if (caps.mcp) {
     await restoreLatestForgeMeshIfAvailable();

@@ -32,6 +32,8 @@ export function ensureForgeEnvLoaded(): void {
   }
 }
 
+export type CadProviderChoice = 'auto' | 'claude' | 'codex' | 'gemini';
+
 export interface BlenderCadGenOptions {
   brief?: string;
   scaleRef?: string;
@@ -39,6 +41,7 @@ export interface BlenderCadGenOptions {
   userFeedback?: string;
   photoBase64?: string;
   errorFeedback?: string;
+  preferredProvider?: CadProviderChoice;
   timeoutMs?: number;
 }
 
@@ -317,30 +320,32 @@ export async function generateBlenderCadScript(
     writeFileSync(tempImagePath, Buffer.from(b64Image, 'base64'));
   }
 
+  const pref = opts.preferredProvider ?? 'auto';
+  const order: Array<'claude' | 'codex' | 'gemini'> =
+    pref === 'codex'
+      ? ['codex', 'claude', 'gemini']
+      : pref === 'gemini'
+        ? ['gemini', 'claude', 'codex']
+        : ['claude', 'codex', 'gemini'];
+
   const errors: string[] = [];
   try {
-    // 1. Primary: Claude Sonnet 5.5 via Claude Code OAuth Subscription ($0 API cost)
-    try {
-      const r = await callClaudeOAuthSonnet55(prompt, tempImagePath, timeoutMs);
-      return { ...r, name: r.name === 'blender-cad-model' ? fallbackName : r.name };
-    } catch (e) {
-      errors.push((e as Error).message);
-    }
-
-    // 2. Fallback 1: GPT-6.1-Sol via OpenAI Codex OAuth Subscription ($0 API cost)
-    try {
-      const r = await callCodexOAuthGpt61Sol(prompt, tempImagePath, timeoutMs);
-      return { ...r, name: r.name === 'blender-cad-model' ? fallbackName : r.name };
-    } catch (e) {
-      errors.push((e as Error).message);
-    }
-
-    // 3. Fallback 2: Google Gemini 3.8 Flash
-    const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-    if (geminiKey) {
+    for (const p of order) {
       try {
-        const r = await callGemini38Flash(prompt, b64Image, geminiKey, timeoutMs);
-        return { ...r, name: r.name === 'blender-cad-model' ? fallbackName : r.name };
+        if (p === 'claude') {
+          const r = await callClaudeOAuthSonnet55(prompt, tempImagePath, timeoutMs);
+          return { ...r, name: r.name === 'blender-cad-model' ? fallbackName : r.name };
+        }
+        if (p === 'codex') {
+          const r = await callCodexOAuthGpt61Sol(prompt, tempImagePath, timeoutMs);
+          return { ...r, name: r.name === 'blender-cad-model' ? fallbackName : r.name };
+        }
+        if (p === 'gemini') {
+          const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+          if (!geminiKey) continue;
+          const r = await callGemini38Flash(prompt, b64Image, geminiKey, timeoutMs);
+          return { ...r, name: r.name === 'blender-cad-model' ? fallbackName : r.name };
+        }
       } catch (e) {
         errors.push((e as Error).message);
       }
@@ -353,6 +358,98 @@ export async function generateBlenderCadScript(
     if (tempImagePath) {
       try {
         unlinkSync(tempImagePath);
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+}
+
+export async function runServerOAuthJsonSample({
+  prompt,
+  imagesBase64 = [],
+  timeoutMs = 75_000,
+}: {
+  prompt: string;
+  imagesBase64?: string[];
+  timeoutMs?: number;
+}): Promise<{ json: any; text: string; provider: string }> {
+  ensureForgeEnvLoaded();
+  const tempPaths: string[] = [];
+  for (let i = 0; i < imagesBase64.length; i++) {
+    const clean = cleanBase64Jpeg(imagesBase64[i]);
+    if (clean) {
+      const p = join(tmpdir(), `sc_sample_${Date.now()}_${i}.jpg`).replace(/\\/g, '/');
+      writeFileSync(p, Buffer.from(clean, 'base64'));
+      tempPaths.push(p);
+    }
+  }
+
+  const parseJsonFromText = (raw: string) => {
+    const trimmed = raw.trim();
+    const fence = trimmed.match(/```(?:json)?\s*\r?\n([\s\S]*?)```/i);
+    if (fence) return JSON.parse(fence[1].trim());
+    const firstBrace = trimmed.indexOf('{');
+    const lastBrace = trimmed.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace > firstBrace) {
+      return JSON.parse(trimmed.slice(firstBrace, lastBrace + 1));
+    }
+    return JSON.parse(trimmed);
+  };
+
+  try {
+    // 1. Try Claude Sonnet 5.5 OAuth CLI
+    try {
+      const claudeBin = existsSync('/home/apexaipc/.local/bin/claude')
+        ? '/home/apexaipc/.local/bin/claude'
+        : 'claude';
+      const args = [
+        '-p',
+        '--model',
+        'claude-sonnet-5-5',
+        '--setting-sources',
+        '',
+        '--no-session-persistence',
+      ];
+      let fullPrompt = prompt;
+      if (tempPaths.length) {
+        args.push('--tools', 'Read', '--add-dir', dirnameOrTmp(tempPaths[0]));
+        fullPrompt = `First, use the Read tool to inspect these attached image file(s): ${tempPaths.join(', ')}\n\n${prompt}`;
+      } else {
+        args.push('--tools', '');
+      }
+      const { stdout } = await runOAuthSubprocess(claudeBin, args, fullPrompt, timeoutMs);
+      const parsed = parseJsonFromText(stdout);
+      return { json: parsed, text: stdout.trim(), provider: 'claude-sonnet-5.5-oauth' };
+    } catch {
+      /* fallback to Codex OAuth */
+    }
+
+    // 2. Fallback: Codex GPT-6.1-Sol OAuth CLI
+    const codexBin = existsSync('/home/apexaipc/.local/bin/codex')
+      ? '/home/apexaipc/.local/bin/codex'
+      : 'codex';
+    const args = [
+      'exec',
+      '--skip-git-repo-check',
+      '-m',
+      'gpt-6.1-sol',
+      '-c',
+      'model_reasoning_effort="low"',
+      '-c',
+      'mcp_servers={}',
+    ];
+    for (const tp of tempPaths) {
+      args.push('-i', tp);
+    }
+    args.push('-');
+    const { stdout } = await runOAuthSubprocess(codexBin, args, prompt, timeoutMs);
+    const parsed = parseJsonFromText(stdout);
+    return { json: parsed, text: stdout.trim(), provider: 'gpt-6.1-sol-oauth' };
+  } finally {
+    for (const tp of tempPaths) {
+      try {
+        unlinkSync(tp);
       } catch {
         /* ignore */
       }

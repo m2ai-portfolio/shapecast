@@ -161,7 +161,9 @@ function runOAuthSubprocess(
     delete env.OPENAI_API_KEY;
     delete env.OPENROUTER_API_KEY;
 
+    const cwd = existsSync('/home/apexaipc') ? '/home/apexaipc' : process.cwd();
     const child = spawn(binPath, args, {
+      cwd,
       env,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -190,11 +192,42 @@ function runOAuthSubprocess(
   });
 }
 
+async function preflightClaudeOAuthQuota(): Promise<void> {
+  const credPath = '/home/apexaipc/.claude/.credentials.json';
+  if (!existsSync(credPath)) return;
+  try {
+    const creds = JSON.parse(readFileSync(credPath, 'utf8'));
+    const token = creds?.claudeAiOauth?.accessToken;
+    if (!token) return;
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'anthropic-version': '2023-06-01',
+        'anthropic-beta': 'oauth-2025-04-20',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-5-5',
+        max_tokens: 4,
+        messages: [{ role: 'user', content: 'ok' }],
+      }),
+      signal: AbortSignal.timeout(3000),
+    });
+    if (res.status === 429) {
+      throw new Error('Claude OAuth subscription rate-limited (HTTP 429)');
+    }
+  } catch (e) {
+    if ((e as Error).message.includes('HTTP 429')) throw e;
+  }
+}
+
 async function callClaudeOAuthSonnet55(
   prompt: string,
   tempImagePath: string | null,
   timeoutMs: number,
 ): Promise<BlenderCadGenResult> {
+  await preflightClaudeOAuthQuota();
   const claudeBin = existsSync('/home/apexaipc/.local/bin/claude')
     ? '/home/apexaipc/.local/bin/claude'
     : 'claude';
@@ -205,6 +238,7 @@ async function callClaudeOAuthSonnet55(
     '--setting-sources',
     '',
     '--no-session-persistence',
+    '--dangerously-skip-permissions',
   ];
   let fullPrompt = prompt;
   if (tempImagePath) {
@@ -218,7 +252,7 @@ async function callClaudeOAuthSonnet55(
     claudeBin,
     args,
     fullPrompt,
-    timeoutMs,
+    Math.min(timeoutMs, 45_000),
   );
   if (code !== 0 && !stdout.trim()) {
     throw new Error(`Claude OAuth CLI exited ${code}: ${stderr.slice(0, 240)}`);
@@ -243,6 +277,9 @@ async function callCodexOAuthGpt61Sol(
   const args = [
     'exec',
     '--skip-git-repo-check',
+    '--ephemeral',
+    '-C',
+    existsSync('/home/apexaipc') ? '/home/apexaipc' : '/tmp',
     '-m',
     'gpt-6.1-sol',
     '-c',
@@ -280,29 +317,38 @@ async function callGemini38Flash(
   }
   parts.push({ text: prompt });
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts }],
-      generationConfig: {
-        maxOutputTokens: 12000,
-        temperature: 0.2,
-      },
-    }),
-    signal: AbortSignal.timeout(timeoutMs),
-  });
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '');
-    throw new Error(`Gemini 3.8 Flash HTTP ${res.status}: ${errText.slice(0, 200)}`);
+  const models = ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-2.5-flash'];
+  let lastErr: Error | null = null;
+  for (const model of models) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts }],
+          generationConfig: {
+            maxOutputTokens: 12000,
+            temperature: 0.2,
+          },
+        }),
+        signal: AbortSignal.timeout(Math.min(timeoutMs, 35_000)),
+      });
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        throw new Error(`Gemini ${model} HTTP ${res.status}: ${errText.slice(0, 180)}`);
+      }
+      const data = (await res.json()) as any;
+      const textParts = (data?.candidates?.[0]?.content?.parts ?? [])
+        .map((p: any) => p?.text ?? '')
+        .join('\n');
+      const parsed = extractBlenderScript(textParts);
+      return { ...parsed, provider: model };
+    } catch (e) {
+      lastErr = e as Error;
+    }
   }
-  const data = (await res.json()) as any;
-  const textParts = (data?.candidates?.[0]?.content?.parts ?? [])
-    .map((p: any) => p?.text ?? '')
-    .join('\n');
-  const parsed = extractBlenderScript(textParts);
-  return { ...parsed, provider: 'gemini-3.8-flash' };
+  throw lastErr ?? new Error('Gemini CAD generation failed');
 }
 
 export async function generateBlenderCadScript(
@@ -398,8 +444,9 @@ export async function runServerOAuthJsonSample({
   };
 
   try {
-    // 1. Try Claude Sonnet 5.5 OAuth CLI
+    // 1. Try Claude Sonnet 5.5 OAuth CLI (preflight quota first so 429 fails fast)
     try {
+      await preflightClaudeOAuthQuota();
       const claudeBin = existsSync('/home/apexaipc/.local/bin/claude')
         ? '/home/apexaipc/.local/bin/claude'
         : 'claude';
@@ -407,6 +454,7 @@ export async function runServerOAuthJsonSample({
         '-p',
         '--model',
         'claude-sonnet-5-5',
+        '--dangerously-skip-permissions',
         '--setting-sources',
         '',
         '--no-session-persistence',
@@ -418,34 +466,76 @@ export async function runServerOAuthJsonSample({
       } else {
         args.push('--tools', '');
       }
-      const { stdout } = await runOAuthSubprocess(claudeBin, args, fullPrompt, timeoutMs);
+      const { stdout } = await runOAuthSubprocess(claudeBin, args, fullPrompt, Math.min(timeoutMs, 35_000));
       const parsed = parseJsonFromText(stdout);
       return { json: parsed, text: stdout.trim(), provider: 'claude-sonnet-5.5-oauth' };
     } catch {
       /* fallback to Codex OAuth */
     }
 
-    // 2. Fallback: Codex GPT-6.1-Sol OAuth CLI
-    const codexBin = existsSync('/home/apexaipc/.local/bin/codex')
-      ? '/home/apexaipc/.local/bin/codex'
-      : 'codex';
-    const args = [
-      'exec',
-      '--skip-git-repo-check',
-      '-m',
-      'gpt-6.1-sol',
-      '-c',
-      'model_reasoning_effort="low"',
-      '-c',
-      'mcp_servers={}',
-    ];
-    for (const tp of tempPaths) {
-      args.push('-i', tp);
+    // 2. Fallback: Codex GPT-6.1-Sol OAuth CLI (run in trusted /home/apexaipc directory)
+    try {
+      const codexBin = existsSync('/home/apexaipc/.local/bin/codex')
+        ? '/home/apexaipc/.local/bin/codex'
+        : 'codex';
+      const trustedDir = existsSync('/home/apexaipc') ? '/home/apexaipc' : tmpdir();
+      const args = [
+        'exec',
+        '--ephemeral',
+        '--skip-git-repo-check',
+        '-C',
+        trustedDir,
+        '-m',
+        'gpt-6.1-sol',
+        '-c',
+        'model_reasoning_effort="low"',
+        '-c',
+        'mcp_servers={}',
+      ];
+      for (const tp of tempPaths) {
+        args.push('-i', tp);
+      }
+      args.push('-');
+      const { stdout } = await runOAuthSubprocess(codexBin, args, prompt, timeoutMs);
+      const parsed = parseJsonFromText(stdout);
+      return { json: parsed, text: stdout.trim(), provider: 'gpt-6.1-sol-oauth' };
+    } catch (codexErr) {
+      // 3. Final fallback: Gemini Flash API if configured
+      const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '';
+      if (!apiKey) throw codexErr;
+      const parts: any[] = [];
+      for (const b64 of imagesBase64) {
+        const clean = cleanBase64Jpeg(b64);
+        if (clean) parts.push({ inline_data: { mime_type: 'image/jpeg', data: clean } });
+      }
+      parts.push({ text: prompt });
+      let lastGeminiErr: any = codexErr;
+      for (const modelName of ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-2.5-flash']) {
+        try {
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(apiKey)}`;
+          const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ role: 'user', parts }],
+              generationConfig: { temperature: 0.2, maxOutputTokens: 4096 },
+            }),
+            signal: AbortSignal.timeout(Math.min(timeoutMs, 35_000)),
+          });
+          if (!res.ok) throw new Error(`${modelName} HTTP ${res.status}`);
+          const data: any = await res.json();
+          const text = (data?.candidates?.[0]?.content?.parts || [])
+            .map((p: any) => p.text || '')
+            .join('\n')
+            .trim();
+          const parsed = parseJsonFromText(text);
+          return { json: parsed, text, provider: modelName };
+        } catch (ge) {
+          lastGeminiErr = ge;
+        }
+      }
+      throw lastGeminiErr;
     }
-    args.push('-');
-    const { stdout } = await runOAuthSubprocess(codexBin, args, prompt, timeoutMs);
-    const parsed = parseJsonFromText(stdout);
-    return { json: parsed, text: stdout.trim(), provider: 'gpt-6.1-sol-oauth' };
   } finally {
     for (const tp of tempPaths) {
       try {

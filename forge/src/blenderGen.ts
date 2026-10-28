@@ -81,12 +81,15 @@ CRITICAL BLENDER 4.3 API & CAD ARCHITECTURE RULES (ZERO VOXEL REMESHING):
    - For \`bpy.ops.mesh.primitive_cylinder_add(vertices=64, radius=r, depth=h, location=(x,y,z), rotation=(rx,ry,rz))\`, use \`radius\` and \`depth\` (never \`height\`).
    - For \`bpy.ops.mesh.primitive_cone_add(vertices=64, radius1=r1, radius2=r2, depth=h, location=(x,y,z), rotation=(rx,ry,rz))\`, use \`radius1\`, \`radius2\`, and \`depth\`.
    - For custom polygonal plates/wedges using \`bmesh\`, create bottom and top vertex rings, connect side quads, call \`bmesh.ops.triangulate(bm, faces=bm.faces)\` and \`bmesh.ops.recalc_face_normals(bm, faces=bm.faces)\`, then write to \`bm.to_mesh(mesh)\`.
-4. MULTI-TIERED HARD-SURFACE DETAIL (BUILD 60 TO 250+ CRISP GEOMETRIC SUB-PARTS):
-   - Define clean helper functions (\`add_box\`, \`add_poly_extrude\`, \`add_thruster_nozzle\`, \`add_panel_grid\`, etc.) and use Python \`for\` loops with symmetry (\`for sx in (-1, 1):\`, \`for i in range(n):\`).
+4. MULTI-TIERED HARD-SURFACE DETAIL (BUILD 50 TO 150 CRISP GEOMETRIC SUB-PARTS VIA COMPACT LOOPS):
+   - Define concise helper functions (\`add_box\`, \`add_poly_extrude\`, \`add_cylinder\`, \`add_cone\`) and use compact Python \`for\` loops with symmetry (\`for sx in (-1, 1):\`, \`for i in range(n):\`) so the entire script is ~120–180 lines of clean Python.
    - Primary Structural Hull / Baffle Frame: Exact polygonal silhouette with raised perimeter armor bevel strips and stepped mounting decks.
-   - Cylindrical & Concentric Assemblies (thrusters, engines, wheels, barrels): Use \`vertices=64\`. Build multi-stage concentric cowlings (outer shroud cone, 2–3 stepped inner rings, recessed core, and 16–28 radial cooling vanes/struts arranged in a circle \`for v in range(vanes):\`).
+   - Cylindrical & Concentric Assemblies (thrusters, engines, wheels, barrels): Use \`vertices=64\`. Build multi-stage concentric cowlings (outer shroud cone, 2–3 stepped inner rings, recessed core, and 16–24 radial cooling vanes/struts arranged in a circle \`for v in range(vanes):\`).
    - Cooling Louvers, Trenches & Micro-Greebles: Populate wings/decks with arrays of angled louver slats, structural ribs, piping conduits, and raised capacitor/greeble blocks (0.8–3.0 mm relief depth).
    - Ensure all sub-parts overlap their parent surface by at least 0.4 mm so the assembly slices cleanly in Chitubox. Use Z as up, units in millimetres, centered around X=0, Y=0, base at Z=0.
+5. DIRECT CODE OUTPUT ONLY (ZERO TOOL / SHELL EXECUTION):
+   - Do NOT execute any shell commands, do NOT run python/blender/ls/cat, and do NOT inspect the filesystem or workspace.
+   - Respond immediately in a single turn with ONLY the \`# NAME:\` comment and the \`\`\`python ... \`\`\` code block.
 
 OUTPUT FORMAT:
 Start your response with a single comment line:
@@ -278,6 +281,8 @@ async function callCodexOAuthGpt61Sol(
     'exec',
     '--skip-git-repo-check',
     '--ephemeral',
+    '--sandbox',
+    'read-only',
     '-C',
     existsSync('/home/apexaipc') ? '/home/apexaipc' : '/tmp',
     '-m',
@@ -292,7 +297,12 @@ async function callCodexOAuthGpt61Sol(
   }
   args.push('-');
 
-  const { code, stdout, stderr } = await runOAuthSubprocess(codexBin, args, prompt, timeoutMs);
+  const { code, stdout, stderr } = await runOAuthSubprocess(
+    codexBin,
+    args,
+    prompt,
+    Math.max(timeoutMs, 120_000),
+  );
   if (code !== 0 && !stdout.trim()) {
     throw new Error(`Codex OAuth CLI exited ${code}: ${stderr.slice(0, 240)}`);
   }
@@ -317,7 +327,7 @@ async function callGemini38Flash(
   }
   parts.push({ text: prompt });
 
-  const models = ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-2.5-flash'];
+  const models = ['gemini-3.8-flash', 'gemini-3.8-pro', 'gemini-3.1-flash-lite'];
   let lastErr: Error | null = null;
   for (const model of models) {
     try {
@@ -330,9 +340,10 @@ async function callGemini38Flash(
           generationConfig: {
             maxOutputTokens: 12000,
             temperature: 0.2,
+            thinkingConfig: { thinkingBudget: 0 },
           },
         }),
-        signal: AbortSignal.timeout(Math.min(timeoutMs, 35_000)),
+        signal: AbortSignal.timeout(Math.max(timeoutMs, 65_000)),
       });
       if (!res.ok) {
         const errText = await res.text().catch(() => '');
@@ -483,6 +494,8 @@ export async function runServerOAuthJsonSample({
         'exec',
         '--ephemeral',
         '--skip-git-repo-check',
+        '--sandbox',
+        'read-only',
         '-C',
         trustedDir,
         '-m',
@@ -496,7 +509,7 @@ export async function runServerOAuthJsonSample({
         args.push('-i', tp);
       }
       args.push('-');
-      const { stdout } = await runOAuthSubprocess(codexBin, args, prompt, timeoutMs);
+      const { stdout } = await runOAuthSubprocess(codexBin, args, prompt, Math.max(timeoutMs, 90_000));
       const parsed = parseJsonFromText(stdout);
       return { json: parsed, text: stdout.trim(), provider: 'gpt-6.1-sol-oauth' };
     } catch (codexErr) {
@@ -510,7 +523,7 @@ export async function runServerOAuthJsonSample({
       }
       parts.push({ text: prompt });
       let lastGeminiErr: any = codexErr;
-      for (const modelName of ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-2.5-flash']) {
+      for (const modelName of ['gemini-3.8-flash', 'gemini-3.8-pro', 'gemini-3.1-flash-lite']) {
         try {
           const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(apiKey)}`;
           const res = await fetch(url, {
@@ -518,9 +531,13 @@ export async function runServerOAuthJsonSample({
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               contents: [{ role: 'user', parts }],
-              generationConfig: { temperature: 0.2, maxOutputTokens: 4096 },
+              generationConfig: {
+                temperature: 0.2,
+                maxOutputTokens: 4096,
+                thinkingConfig: { thinkingBudget: 0 },
+              },
             }),
-            signal: AbortSignal.timeout(Math.min(timeoutMs, 35_000)),
+            signal: AbortSignal.timeout(Math.max(timeoutMs, 45_000)),
           });
           if (!res.ok) throw new Error(`${modelName} HTTP ${res.status}`);
           const data: any = await res.json();

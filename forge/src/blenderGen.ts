@@ -370,7 +370,9 @@ async function callGemini4(
   }
   parts.push({ text: prompt });
 
-  const models = ['gemini-4-argon', 'gemini-3.8-flash', 'gemini-3.8-pro', 'gemini-3.1-flash-lite'];
+  // Never fall back to a "-lite" model (e.g. gemini-3.1-flash-lite) for 3D CAD scripts,
+  // as Lite models produce crude low-polygon box primitives instead of detailed CAD geometry.
+  const models = ['gemini-4-argon', 'gemini-3.8-flash'];
   let lastErr: Error | null = null;
   for (const model of models) {
     try {
@@ -378,6 +380,9 @@ async function callGemini4(
       const thinkingConfig = model.startsWith('gemini-4')
         ? { thinkingLevel: 'low' }
         : { thinkingBudget: 0 };
+      const perModelTimeout = model.startsWith('gemini-4')
+        ? Math.max(timeoutMs, 60_000)
+        : 20_000;
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -389,7 +394,7 @@ async function callGemini4(
             thinkingConfig,
           },
         }),
-        signal: AbortSignal.timeout(Math.max(timeoutMs, 75_000)),
+        signal: AbortSignal.timeout(perModelTimeout),
       });
       if (!res.ok) {
         const errText = await res.text().catch(() => '');

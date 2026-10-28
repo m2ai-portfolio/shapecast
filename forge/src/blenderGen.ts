@@ -1,9 +1,9 @@
 /**
  * Server-side Blender 4.3 CAD Python (bpy/bmesh) Architect for ShapeCast Forge.
  * Uses Matthew's OAuth subscriptions directly on ProBook:
- *   1. Claude Sonnet 5.5 (`claude -p --model claude-sonnet-5-5`, via ~/.claude/.credentials.json OAuth)
+ *   1. Claude Opus 5.5 (`claude -p --model claude-opus-5-5`, via ~/.claude/.credentials.json OAuth)
  *   2. GPT-6.1-Sol (`codex exec -m gpt-6.1-sol`, via ~/.codex/auth.json ChatGPT OAuth, with native `-i` image support)
- *   3. Gemini 3.8 Flash (`gemini-3.8-flash`, fallback)
+ *   3. Gemini 4 (`gemini-4-argon`, fallback)
  * Explicitly strips ANTHROPIC_API_KEY, OPENAI_API_KEY, and OPENROUTER_API_KEY when invoking
  * the Claude and Codex CLIs so requests are 100% covered by OAuth subscriptions ($0 API cost).
  */
@@ -254,7 +254,7 @@ async function preflightClaudeOAuthQuota(): Promise<void> {
         Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-5-5',
+        model: 'claude-opus-5-5',
         max_tokens: 4,
         messages: [{ role: 'user', content: 'ok' }],
       }),
@@ -268,7 +268,7 @@ async function preflightClaudeOAuthQuota(): Promise<void> {
   }
 }
 
-async function callClaudeOAuthSonnet55(
+async function callClaudeOAuthOpus55(
   prompt: string,
   tempImagePath: string | null,
   timeoutMs: number,
@@ -280,7 +280,7 @@ async function callClaudeOAuthSonnet55(
   const args = [
     '-p',
     '--model',
-    'claude-sonnet-5-5',
+    'claude-opus-5-5',
     '--setting-sources',
     '',
     '--no-session-persistence',
@@ -298,13 +298,13 @@ async function callClaudeOAuthSonnet55(
     claudeBin,
     args,
     fullPrompt,
-    Math.min(timeoutMs, 45_000),
+    Math.min(timeoutMs, 60_000),
   );
   if (code !== 0 && !stdout.trim()) {
     throw new Error(`Claude OAuth CLI exited ${code}: ${stderr.slice(0, 240)}`);
   }
   const parsed = extractBlenderScript(stdout);
-  return { ...parsed, provider: 'claude-sonnet-5.5-oauth' };
+  return { ...parsed, provider: 'claude-opus-5.5-oauth' };
 }
 
 function dirnameOrTmp(filePath: string): string {
@@ -353,7 +353,7 @@ async function callCodexOAuthGpt61Sol(
   return { ...parsed, provider: 'gpt-6.1-sol-oauth' };
 }
 
-async function callGemini38Flash(
+async function callGemini4(
   prompt: string,
   b64Image: string | null,
   apiKey: string,
@@ -370,23 +370,26 @@ async function callGemini38Flash(
   }
   parts.push({ text: prompt });
 
-  const models = ['gemini-3.8-flash', 'gemini-3.8-pro', 'gemini-3.1-flash-lite'];
+  const models = ['gemini-4-argon', 'gemini-3.8-flash', 'gemini-3.8-pro', 'gemini-3.1-flash-lite'];
   let lastErr: Error | null = null;
   for (const model of models) {
     try {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+      const thinkingConfig = model.startsWith('gemini-4')
+        ? { thinkingLevel: 'low' }
+        : { thinkingBudget: 0 };
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts }],
           generationConfig: {
-            maxOutputTokens: 12000,
+            maxOutputTokens: 16384,
             temperature: 0.2,
-            thinkingConfig: { thinkingBudget: 0 },
+            thinkingConfig,
           },
         }),
-        signal: AbortSignal.timeout(Math.max(timeoutMs, 65_000)),
+        signal: AbortSignal.timeout(Math.max(timeoutMs, 75_000)),
       });
       if (!res.ok) {
         const errText = await res.text().catch(() => '');
@@ -394,6 +397,7 @@ async function callGemini38Flash(
       }
       const data = (await res.json()) as any;
       const textParts = (data?.candidates?.[0]?.content?.parts ?? [])
+        .filter((p: any) => !p?.thought)
         .map((p: any) => p?.text ?? '')
         .join('\n');
       const parsed = extractBlenderScript(textParts);
@@ -434,7 +438,7 @@ export async function generateBlenderCadScript(
     for (const p of order) {
       try {
         if (p === 'claude') {
-          const r = await callClaudeOAuthSonnet55(prompt, tempImagePath, timeoutMs);
+          const r = await callClaudeOAuthOpus55(prompt, tempImagePath, timeoutMs);
           return { ...r, name: r.name === 'blender-cad-model' ? fallbackName : r.name };
         }
         if (p === 'codex') {
@@ -444,7 +448,7 @@ export async function generateBlenderCadScript(
         if (p === 'gemini') {
           const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
           if (!geminiKey) continue;
-          const r = await callGemini38Flash(prompt, b64Image, geminiKey, timeoutMs);
+          const r = await callGemini4(prompt, b64Image, geminiKey, timeoutMs);
           return { ...r, name: r.name === 'blender-cad-model' ? fallbackName : r.name };
         }
       } catch (e) {
@@ -498,7 +502,7 @@ export async function runServerOAuthJsonSample({
   };
 
   try {
-    // 1. Try Claude Sonnet 5.5 OAuth CLI (preflight quota first so 429 fails fast)
+    // 1. Try Claude Opus 5.5 OAuth CLI (preflight quota first so 429 fails fast)
     try {
       await preflightClaudeOAuthQuota();
       const claudeBin = existsSync('/home/apexaipc/.local/bin/claude')
@@ -507,7 +511,7 @@ export async function runServerOAuthJsonSample({
       const args = [
         '-p',
         '--model',
-        'claude-sonnet-5-5',
+        'claude-opus-5-5',
         '--dangerously-skip-permissions',
         '--setting-sources',
         '',
@@ -520,9 +524,9 @@ export async function runServerOAuthJsonSample({
       } else {
         args.push('--tools', '');
       }
-      const { stdout } = await runOAuthSubprocess(claudeBin, args, fullPrompt, Math.min(timeoutMs, 35_000));
+      const { stdout } = await runOAuthSubprocess(claudeBin, args, fullPrompt, Math.min(timeoutMs, 45_000));
       const parsed = parseJsonFromText(stdout);
-      return { json: parsed, text: stdout.trim(), provider: 'claude-sonnet-5.5-oauth' };
+      return { json: parsed, text: stdout.trim(), provider: 'claude-opus-5.5-oauth' };
     } catch {
       /* fallback to Codex OAuth */
     }
@@ -556,7 +560,7 @@ export async function runServerOAuthJsonSample({
       const parsed = parseJsonFromText(stdout);
       return { json: parsed, text: stdout.trim(), provider: 'gpt-6.1-sol-oauth' };
     } catch (codexErr) {
-      // 3. Final fallback: Gemini Flash API if configured
+      // 3. Final fallback: Gemini 4 (gemini-4-argon) API if configured
       const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '';
       if (!apiKey) throw codexErr;
       const parts: any[] = [];
@@ -566,9 +570,12 @@ export async function runServerOAuthJsonSample({
       }
       parts.push({ text: prompt });
       let lastGeminiErr: any = codexErr;
-      for (const modelName of ['gemini-3.8-flash', 'gemini-3.8-pro', 'gemini-3.1-flash-lite']) {
+      for (const modelName of ['gemini-4-argon', 'gemini-3.8-flash', 'gemini-3.8-pro', 'gemini-3.1-flash-lite']) {
         try {
           const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(apiKey)}`;
+          const thinkingConfig = modelName.startsWith('gemini-4')
+            ? { thinkingLevel: 'low' }
+            : { thinkingBudget: 0 };
           const res = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -576,15 +583,16 @@ export async function runServerOAuthJsonSample({
               contents: [{ role: 'user', parts }],
               generationConfig: {
                 temperature: 0.2,
-                maxOutputTokens: 4096,
-                thinkingConfig: { thinkingBudget: 0 },
+                maxOutputTokens: 8192,
+                thinkingConfig,
               },
             }),
-            signal: AbortSignal.timeout(Math.max(timeoutMs, 45_000)),
+            signal: AbortSignal.timeout(Math.max(timeoutMs, 60_000)),
           });
           if (!res.ok) throw new Error(`${modelName} HTTP ${res.status}`);
           const data: any = await res.json();
           const text = (data?.candidates?.[0]?.content?.parts || [])
+            .filter((p: any) => !p?.thought)
             .map((p: any) => p.text || '')
             .join('\n')
             .trim();

@@ -430,7 +430,7 @@ function addPhotos(files) {
 }
 
 // ---------- Mesh Forge & Standalone LAN Studio ----------
-const UI_VERSION = '4.0.2';
+const UI_VERSION = '4.0.3';
 const CAD_PRESETS = {
   star_destroyer_engines: {
     name: 'stardestroyer-engines-cad',

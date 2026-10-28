@@ -2344,9 +2344,18 @@ function blobToBase64(blob) {
   });
 }
 
-/** Shrink a photo Blob/File on-device to a JPEG <= 700 KB and return { blob, base64 }. */
+/** Shrink a photo Blob/File on-device to a genuine baseline JPEG <= 700 KB and return { blob, base64 }. */
 async function shrinkPhotoForForge(blob, maxSide = 1600) {
+  let isGenuineJpeg = false;
   if (blob.size <= 700000 && /jpe?g/i.test(blob.type || '')) {
+    try {
+      const hdr = new Uint8Array(await blob.slice(0, 3).arrayBuffer());
+      isGenuineJpeg = hdr[0] === 0xff && hdr[1] === 0xd8 && hdr[2] === 0xff;
+    } catch {
+      isGenuineJpeg = false;
+    }
+  }
+  if (isGenuineJpeg) {
     return { blob, base64: await blobToBase64(blob) };
   }
   const bmp = await createImageBitmap(blob);
@@ -3181,6 +3190,10 @@ function addPhotos(files) {
     }
     state.project.photos.push({ localId: newId('ph'), file: f, url: URL.createObjectURL(f) });
   }
+  if (files.length > 0) {
+    // Attaching a new reference photo starts a fresh visual reference context
+    state.lastBlenderCode = null;
+  }
   if (canPersist())
     saveCtl.setPendingUploads(state.project.photos.filter((p) => !p.assetId).length);
   saveCtl.markChanged();
@@ -3188,7 +3201,7 @@ function addPhotos(files) {
 }
 
 // ---------- Mesh Forge & Standalone LAN Studio ----------
-const UI_VERSION = '4.0';
+const UI_VERSION = '4.0.2';
 const CAD_PRESETS = {
   star_destroyer_engines: {
     name: 'stardestroyer-engines-cad',
@@ -3419,15 +3432,10 @@ async function refreshForgeStatus() {
   }
 }
 
-async function restoreLatestForgeMeshIfAvailable() {
+async function restoreLatestForgeMeshIfAvailable({ onlyActive = false } = {}) {
   if (!caps.mcp || state.forgeMesh || state.inference || state.mode === 'blocks') return;
   try {
     const meta = loadLastForgeMeta();
-    if (meta && state.project) {
-      if (!state.project.brief && meta.brief) state.project.brief = meta.brief;
-      if (!state.project.scaleRef && meta.scaleRef) state.project.scaleRef = meta.scaleRef;
-      if (state.project.name === SAMPLE_LIST.name && meta.name) state.project.name = meta.name;
-    }
     const st = await refreshForgeStatus();
     if (st?.activeJob?.jobId && !state.inference) {
       const controller = new AbortController();
@@ -3441,6 +3449,12 @@ async function restoreLatestForgeMeshIfAvailable() {
         setBusy(false, '');
       }
       return;
+    }
+    if (onlyActive || state.project?.photos?.length) return;
+    if (meta && state.project) {
+      if (!state.project.brief && meta.brief) state.project.brief = meta.brief;
+      if (!state.project.scaleRef && meta.scaleRef) state.project.scaleRef = meta.scaleRef;
+      if (state.project.name === SAMPLE_LIST.name && meta.name) state.project.name = meta.name;
     }
     const targetJobId = st?.lastJobId || meta?.jobId || 'latest';
     const res = await caps.mcp.callTool(
@@ -3857,7 +3871,12 @@ async function runBlenderGenerate(userFeedback = '') {
     return;
   }
 
-  const isRevision = Boolean((userFeedback || !brief) && state.lastBlenderCode);
+  // Only treat as a revision when explicit userFeedback/refine instructions are given.
+  // Clicking "Build in Blender" (userFeedback === '') must ALWAYS build from scratch!
+  const isRevision = Boolean(userFeedback && state.lastBlenderCode);
+  if (!isRevision) {
+    state.lastBlenderCode = null;
+  }
   const targetMm = parseScaleRefMm(state.project.scaleRef, 120);
   try {
     let photoBase64;
@@ -3873,12 +3892,20 @@ async function runBlenderGenerate(userFeedback = '') {
       }
     }
 
+    const photoName =
+      photoBlob && 'name' in photoBlob && typeof photoBlob.name === 'string'
+        ? photoBlob.name.replace(/\.\w+$/, '')
+        : '';
     const derivedName = (
       brief
         ? brief.slice(0, META.name)
-        : state.project.name && state.project.name !== SAMPLE_LIST.name
-          ? state.project.name
-          : 'blender-cad-model'
+        : photoName
+          ? photoName.slice(0, META.name)
+          : state.project.name &&
+              state.project.name !== SAMPLE_LIST.name &&
+              state.project.name !== state.forgeMesh?.name
+            ? state.project.name
+            : 'blender-cad-model'
     ).slice(0, META.name);
     state.project.name = derivedName;
     if ($('projectName')) $('projectName').value = derivedName;
@@ -4217,6 +4244,7 @@ function installProject(project) {
   state.inference?.controller.abort();
   partCache.clear();
   state.forgeMesh = null;
+  state.lastBlenderCode = null;
   state.project = project;
   state.unsavedRevisions = [];
   state.selectedId = null;
@@ -4294,6 +4322,7 @@ async function init() {
   $('cadPresetSelect')?.addEventListener('change', (e) => {
     const key = /** @type {HTMLSelectElement} */ (e.target).value;
     const preset = CAD_PRESETS[key];
+    state.lastBlenderCode = null;
     if (preset) {
       state.project.name = preset.name;
       state.project.scaleRef = preset.scaleRef;
@@ -4301,6 +4330,10 @@ async function init() {
       $('projectName').value = preset.name;
       $('scaleRef').value = preset.scaleRef;
       $('brief').value = preset.brief;
+      metaChange();
+    } else {
+      state.project.brief = '';
+      $('brief').value = '';
       metaChange();
     }
   });
@@ -4480,7 +4513,7 @@ async function init() {
     await restoreLatestForgeMeshIfAvailable();
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') {
-        restoreLatestForgeMeshIfAvailable();
+        restoreLatestForgeMeshIfAvailable({ onlyActive: true });
       }
     });
   }

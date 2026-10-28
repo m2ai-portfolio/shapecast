@@ -7,8 +7,8 @@
  * Explicitly strips ANTHROPIC_API_KEY, OPENAI_API_KEY, and OPENROUTER_API_KEY when invoking
  * the Claude and Codex CLIs so requests are 100% covered by OAuth subscriptions ($0 API cost).
  */
-import { spawn } from 'node:child_process';
-import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { execFileSync, spawn } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -68,9 +68,9 @@ export function buildServerBlenderPrompt(opts: BlenderCadGenOptions): string {
   }
 
   return `You are a Principal Hard-Surface CAD & Blender 4.3 Python (bpy / bmesh / mathutils) Engineer designing a razor-sharp 3D print model for an Elegoo Saturn 3 (12K) resin printer.
-Brief: ${brief && brief.trim() ? brief.trim() : '(from attached reference photo)'}
+Brief: ${brief && brief.trim() ? brief.trim() : '(Build the exact object shown in the attached reference photo — match its subject, silhouette, 3D aspect ratio, and surface details)'}
 Scale reference: ${scaleRef && scaleRef.trim() ? scaleRef.trim() : '120 mm longest horizontal dimension'}
-Visual Input: ${hasPhoto ? 'Reference image attached — match its exact silhouette, layout, proportions, thruster/feature count, and mechanical details.' : 'Text brief only.'}
+Visual Input: ${hasPhoto ? 'Reference image attached — YOU MUST inspect and faithfully reconstruct the exact subject shown in the reference photo (match its true 3D length:width:height proportions, hull/body shape, wings/appendages, engines/features, and surface paneling; NEVER substitute an unrelated turret or generic placeholder).' : 'Text brief only.'}
 ${revisionSection}
 CRITICAL BLENDER 4.3 API & CAD ARCHITECTURE RULES (ZERO VOXEL REMESHING):
 1. Your geometry is exported as 100% EXACT mathematical CAD triangles (ZERO voxel remeshing, ZERO smoothing). Every bevel, 64-segment cylinder ring, radial turbine blade, louver slat, and micro-greeble block is preserved with 0.00 mm precision in Chitubox.
@@ -82,14 +82,14 @@ CRITICAL BLENDER 4.3 API & CAD ARCHITECTURE RULES (ZERO VOXEL REMESHING):
    - For \`bpy.ops.mesh.primitive_cone_add(vertices=64, radius1=r1, radius2=r2, depth=h, location=(x,y,z), rotation=(rx,ry,rz))\`, use \`radius1\`, \`radius2\`, and \`depth\`.
    - For custom polygonal plates/wedges using \`bmesh\`, create bottom and top vertex rings, connect side quads, call \`bmesh.ops.triangulate(bm, faces=bm.faces)\` and \`bmesh.ops.recalc_face_normals(bm, faces=bm.faces)\`, then write to \`bm.to_mesh(mesh)\`.
 4. MULTI-TIERED HARD-SURFACE DETAIL (BUILD 50 TO 150 CRISP GEOMETRIC SUB-PARTS VIA COMPACT LOOPS):
-   - Define concise helper functions (\`add_box\`, \`add_poly_extrude\`, \`add_cylinder\`, \`add_cone\`) and use compact Python \`for\` loops with symmetry (\`for sx in (-1, 1):\`, \`for i in range(n):\`) so the entire script is ~120–180 lines of clean Python.
-   - Primary Structural Hull / Baffle Frame: Exact polygonal silhouette with raised perimeter armor bevel strips and stepped mounting decks.
-   - Cylindrical & Concentric Assemblies (thrusters, engines, wheels, barrels): Use \`vertices=64\`. Build multi-stage concentric cowlings (outer shroud cone, 2–3 stepped inner rings, recessed core, and 16–24 radial cooling vanes/struts arranged in a circle \`for v in range(vanes):\`).
-   - Cooling Louvers, Trenches & Micro-Greebles: Populate wings/decks with arrays of angled louver slats, structural ribs, piping conduits, and raised capacitor/greeble blocks (0.8–3.0 mm relief depth).
+   - Define concise helper functions (\`add_box\`, \`add_poly_extrude\`, \`add_cylinder\`, \`add_cone\`, \`add_sphere\`) and use compact Python \`for\` loops with symmetry (\`for sx in (-1, 1):\`, \`for i in range(n):\`) so the entire script is ~120–180 lines of clean Python.
+   - Match the true 3D silhouette & proportions of the target subject (e.g., an elongated capital ship / carrier hull with sponsons and bridge superstructure; a spherical robotic drone with wings, eye optics, antenna, and thrusters; or a precision mechanical assembly).
+   - Cylindrical & Concentric Assemblies: Use \`vertices=64\`. Build multi-stage concentric rings, recessed cores, and radial vanes/struts arranged in a circle \`for v in range(vanes):\`.
+   - Cooling Louvers, Trenches & Micro-Greebles: Populate hulls/wings/decks with arrays of angled louver slats, structural ribs, armor plates, and raised greeble blocks (0.8–3.0 mm relief depth).
    - Ensure all sub-parts overlap their parent surface by at least 0.4 mm so the assembly slices cleanly in Chitubox. Use Z as up, units in millimetres, centered around X=0, Y=0, base at Z=0.
-5. DIRECT CODE OUTPUT ONLY (ZERO TOOL / SHELL EXECUTION):
-   - Do NOT execute any shell commands, do NOT run python/blender/ls/cat, and do NOT inspect the filesystem or workspace.
-   - Respond immediately in a single turn with ONLY the \`# NAME:\` comment and the \`\`\`python ... \`\`\` code block.
+5. DIRECT CODE OUTPUT ONLY (NO SHELL / SANDBOX EXECUTION):
+   - Do NOT execute any bash/shell commands and do NOT run python or blender. (If a reference image path is attached and you have a Read/view_image tool, read ONLY that reference image file first, then output the Python code block immediately.)
+   - Respond with ONLY the \`# NAME:\` comment and the \`\`\`python ... \`\`\` code block.
 
 OUTPUT FORMAT:
 Start your response with a single comment line:
@@ -149,6 +149,49 @@ function cleanBase64Jpeg(photoBase64?: string): string | null {
   if (!photoBase64 || !photoBase64.trim()) return null;
   const trimmed = photoBase64.trim();
   return trimmed.includes(',') ? trimmed.split(',')[1] : trimmed;
+}
+
+/**
+ * Writes base64 image data into a trusted directory and guarantees a genuine
+ * baseline JPEG (`0xFF 0xD8 0xFF`). If the input buffer is AVIF (`ftypavif`),
+ * WebP (`RIFF`), or PNG disguised with a `.jpg` extension, transcodes via ffmpeg.
+ */
+function writeVerifiedJpegFile(
+  b64Image: string,
+  prefix = 'sc_cad_ref',
+): { filePath: string; normalizedB64: string } {
+  const baseDir = existsSync('/home/apexaipc')
+    ? '/home/apexaipc/.cache/shapecast-cad'
+    : tmpdir();
+  mkdirSync(baseDir, { recursive: true });
+  const stamp = `${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  const jpgPath = join(baseDir, `${prefix}_${stamp}.jpg`).replace(/\\/g, '/');
+  const buf = Buffer.from(b64Image, 'base64');
+  const isRealJpeg = buf.length > 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
+  if (isRealJpeg) {
+    writeFileSync(jpgPath, buf);
+    return { filePath: jpgPath, normalizedB64: b64Image };
+  }
+  const rawPath = join(baseDir, `${prefix}_${stamp}_raw.img`).replace(/\\/g, '/');
+  writeFileSync(rawPath, buf);
+  try {
+    execFileSync('ffmpeg', ['-y', '-i', rawPath, '-frames:v', '1', '-q:v', '2', jpgPath], {
+      stdio: 'ignore',
+      timeout: 10_000,
+    });
+    const converted = readFileSync(jpgPath);
+    return { filePath: jpgPath, normalizedB64: converted.toString('base64') };
+  } catch {
+    // Fallback: write original bytes if ffmpeg is unavailable
+    writeFileSync(jpgPath, buf);
+    return { filePath: jpgPath, normalizedB64: b64Image };
+  } finally {
+    try {
+      unlinkSync(rawPath);
+    } catch {
+      /* ignore */
+    }
+  }
 }
 
 function runOAuthSubprocess(
@@ -367,14 +410,15 @@ export async function generateBlenderCadScript(
 ): Promise<BlenderCadGenResult> {
   ensureForgeEnvLoaded();
   const prompt = buildServerBlenderPrompt(opts);
-  const b64Image = cleanBase64Jpeg(opts.photoBase64);
+  let b64Image = cleanBase64Jpeg(opts.photoBase64);
   const timeoutMs = opts.timeoutMs ?? 90_000;
   const fallbackName = (opts.brief?.trim() || 'blender-cad-model').slice(0, 50);
 
   let tempImagePath: string | null = null;
   if (b64Image) {
-    tempImagePath = join(tmpdir(), `sc_cad_ref_${Date.now()}.jpg`).replace(/\\/g, '/');
-    writeFileSync(tempImagePath, Buffer.from(b64Image, 'base64'));
+    const verified = writeVerifiedJpegFile(b64Image, 'sc_cad_ref');
+    tempImagePath = verified.filePath;
+    b64Image = verified.normalizedB64;
   }
 
   const pref = opts.preferredProvider ?? 'auto';
@@ -434,11 +478,10 @@ export async function runServerOAuthJsonSample({
   ensureForgeEnvLoaded();
   const tempPaths: string[] = [];
   for (let i = 0; i < imagesBase64.length; i++) {
-    const clean = cleanBase64Jpeg(imagesBase64[i]);
-    if (clean) {
-      const p = join(tmpdir(), `sc_sample_${Date.now()}_${i}.jpg`).replace(/\\/g, '/');
-      writeFileSync(p, Buffer.from(clean, 'base64'));
-      tempPaths.push(p);
+    const p = await writeVerifiedJpegFile(imagesBase64[i], `sc_sample_${i}`);
+    if (p) {
+      tempPaths.push(p.filePath);
+      imagesBase64[i] = p.normalizedB64;
     }
   }
 

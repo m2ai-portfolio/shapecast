@@ -237,9 +237,18 @@ function blobToBase64(blob) {
   });
 }
 
-/** Shrink a photo Blob/File on-device to a JPEG <= 700 KB and return { blob, base64 }. */
+/** Shrink a photo Blob/File on-device to a genuine baseline JPEG <= 700 KB and return { blob, base64 }. */
 export async function shrinkPhotoForForge(blob, maxSide = 1600) {
+  let isGenuineJpeg = false;
   if (blob.size <= 700000 && /jpe?g/i.test(blob.type || '')) {
+    try {
+      const hdr = new Uint8Array(await blob.slice(0, 3).arrayBuffer());
+      isGenuineJpeg = hdr[0] === 0xff && hdr[1] === 0xd8 && hdr[2] === 0xff;
+    } catch {
+      isGenuineJpeg = false;
+    }
+  }
+  if (isGenuineJpeg) {
     return { blob, base64: await blobToBase64(blob) };
   }
   const bmp = await createImageBitmap(blob);

@@ -24,10 +24,11 @@ describe('buildPage', () => {
       buildPage('<script src="https://esm.sh/x"></script><!-- @inline-modules -->', []),
     ).toThrow(/cdnjs/);
   });
-  it('strips multi-line import blocks', () => {
-    const src = "import {\n  a,\n  b,\n} from './x.js';\nexport const c = a + b;\n";
+  it('strips multi-line import blocks and preserves literal dollar signs ($${x})', () => {
+    const src =
+      "import {\n  a,\n  b,\n} from './x.js';\nexport const c = `$${(a + b).toFixed(2)}`;\n";
     const out = buildPage('<!-- @inline-modules -->', [{ name: 'm.js', source: src }]);
     expect(out).not.toMatch(/import/);
-    expect(out).toContain('const c = a + b;');
+    expect(out).toContain('const c = `$${(a + b).toFixed(2)}`;');
   });
 });

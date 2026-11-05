@@ -1,4 +1,8 @@
 <title>ShapeCast — 405nm UV Resin Pre-Flight &amp; AI 3D Studio</title>
+<link
+  rel="icon"
+  href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230b0d12'/%3E%3Cpolygon points='16,4 28,11 28,23 16,29 4,23 4,11' fill='%23a855f7' opacity='0.88'/%3E%3Cpolygon points='16,4 28,11 16,17 4,11' fill='%23f59e0b'/%3E%3C/svg%3E"
+/>
 <style>
   /* Optical Darkroom Studio default + crisp Studio Light toggle */
   :root {
@@ -3424,8 +3428,17 @@ function createViewport(canvas, { onSelect = (_id) => {} } = {}) {
 
   function setShaderMode(mode) {
     if (!RESIN_PRESETS[mode] || mode === shaderMode) return overhangStats;
+    const prev = shaderMode;
     shaderMode = mode;
     rebuildMeshes();
+    if (mode === 'overhang' && phi < Math.PI / 2) {
+      // Pitch beneath the translucent Saturn 3 build plate to inspect downward <45 deg islands
+      phi = 1.88;
+      updateCamera();
+    } else if (prev === 'overhang' && phi > 1.65) {
+      phi = 1.06;
+      updateCamera();
+    }
     return overhangStats;
   }
 
@@ -3784,15 +3797,15 @@ function updateTelemetryCards() {
     $('telCost').textContent =
       tel.solidMl > 0
         ? tel.recommendHollow
-          ? `${tel.hollowCostUsd.toFixed(2)}`
-          : `${tel.solidCostUsd.toFixed(2)}`
+          ? `$${tel.hollowCostUsd.toFixed(2)}`
+          : `$${tel.solidCostUsd.toFixed(2)}`
         : '—';
   }
   if ($('telCostSub')) {
     $('telCostSub').textContent =
       tel.solidMl > 0
         ? tel.recommendHollow
-          ? `${Math.round(tel.hollowGrams)}g hollow (${tel.solidCostUsd.toFixed(2)} solid)`
+          ? `${Math.round(tel.hollowGrams)}g hollow ($${tel.solidCostUsd.toFixed(2)} solid)`
           : `${Math.round(tel.solidGrams)}g (${tel.solidMl.toFixed(1)} mL)`
         : '8K Photopolymer';
   }

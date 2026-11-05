@@ -470,8 +470,17 @@ export function createViewport(canvas, { onSelect = (_id) => {} } = {}) {
 
   function setShaderMode(mode) {
     if (!RESIN_PRESETS[mode] || mode === shaderMode) return overhangStats;
+    const prev = shaderMode;
     shaderMode = mode;
     rebuildMeshes();
+    if (mode === 'overhang' && phi < Math.PI / 2) {
+      // Pitch beneath the translucent Saturn 3 build plate to inspect downward <45 deg islands
+      phi = 1.88;
+      updateCamera();
+    } else if (prev === 'overhang' && phi > 1.65) {
+      phi = 1.06;
+      updateCamera();
+    }
     return overhangStats;
   }
 

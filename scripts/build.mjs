@@ -38,7 +38,7 @@ export function buildPage(page, modules) {
   const body = modules
     .map((m) => `// --- ${m.name} ---\n${stripModuleSyntax(m.source)}`)
     .join('\n');
-  return page.replace('<!-- @inline-modules -->', `<script>\n'use strict';\n${body}\n</script>`);
+  return page.replace('<!-- @inline-modules -->', () => `<script>\n'use strict';\n${body}\n</script>`);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

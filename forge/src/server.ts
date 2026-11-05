@@ -4,9 +4,21 @@
  */
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from 'node:http';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { homedir } from 'node:os';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+  chmodSync,
+  readdirSync,
+  statSync,
+  openSync,
+  readSync,
+  closeSync,
+} from 'node:fs';
+import { basename, dirname, join } from 'node:path';
+import { homedir, tmpdir } from 'node:os';
+import { gzipSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -23,7 +35,7 @@ import { runServerOAuthJsonSample } from './blenderGen.js';
 import { createJobManager, type JobManager } from './jobs.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-export const FORGE_VERSION = '5.0.0';
+export const FORGE_VERSION = '6.0.0';
 export const BLENDER_VERSION = '4.3.2';
 
 export interface ForgeConfig {
@@ -65,6 +77,79 @@ const json = (
   obj: unknown,
   headers: Record<string, string> = {},
 ) => send(res, status, JSON.stringify(obj), { 'Content-Type': 'application/json', ...headers });
+
+const SAFE_STL_RE = /^[a-zA-Z0-9._-]+\.stl$/i;
+
+function formatVaultLabel(filename: string): string {
+  const stem = filename
+    .replace(/\.stl$/i, '')
+    .replace(/^\d{4}-\d{2}-\d{2}-/, '')
+    .replace(/-\d{8,}$/, '');
+  return stem
+    .split(/[-_]+/)
+    .filter(Boolean)
+    .map((w) =>
+      w.length <= 4 && /^(isd|cad|hd|v\d+)/i.test(w)
+        ? w.toUpperCase()
+        : w[0].toUpperCase() + w.slice(1),
+    )
+    .join(' ')
+    .slice(0, 42);
+}
+
+function listVaultStls(outDir: string) {
+  if (!existsSync(outDir)) return [];
+  const allNames = readdirSync(outDir);
+  const pyScripts = allNames.filter((f) => f.endsWith('.py')).map((f) => f.toLowerCase());
+  const items: Array<{
+    filename: string;
+    label: string;
+    triangles: number;
+    sizeBytes: number;
+    mtimeMs: number;
+    engine: 'blender' | 'hunyuan';
+  }> = [];
+
+  for (const f of allNames) {
+    if (!SAFE_STL_RE.test(f)) continue;
+    try {
+      const full = join(outDir, f);
+      const st = statSync(full);
+      if (!st.isFile() || st.size < 84) continue;
+      const hdr = Buffer.alloc(84);
+      const fd = openSync(full, 'r');
+      try {
+        readSync(fd, hdr, 0, 84, 0);
+      } finally {
+        closeSync(fd);
+      }
+      const triangles = hdr.readUInt32LE(80);
+      if (triangles === 0 || triangles > 5_000_000) continue;
+      const slug = f
+        .replace(/\.stl$/i, '')
+        .replace(/^\d{4}-\d{2}-\d{2}-/, '')
+        .slice(0, 10)
+        .toLowerCase();
+      const isBlender =
+        f.toLowerCase().includes('blender') ||
+        f.toLowerCase().includes('isd') ||
+        f.toLowerCase().includes('turret') ||
+        pyScripts.some((p) => slug.length >= 4 && p.includes(slug));
+      items.push({
+        filename: f,
+        label: formatVaultLabel(f) || f,
+        triangles,
+        sizeBytes: st.size,
+        mtimeMs: Math.round(st.mtimeMs),
+        engine: isBlender ? 'blender' : 'hunyuan',
+      });
+    } catch {
+      /* skip unreadable files */
+    }
+  }
+  items.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  return items.slice(0, 24);
+}
 
 function buildMcp(cfg: ForgeConfig, jobs: JobManager): McpServer {
   const server = new McpServer({ name: 'shapecast-forge', version: FORGE_VERSION });
@@ -635,6 +720,46 @@ export function createForgeServer(cfg: ForgeConfig): Server {
             corsHeaders,
           );
         }
+      }
+
+      if ((path === '/api/vault' || path === '/forge/api/vault') && req.method === 'GET') {
+        const outDir = cfg.localOutDir ?? join(tmpdir(), 'shapecast-forge-out');
+        return json(res, 200, { ok: true, items: listVaultStls(outDir) }, corsHeaders);
+      }
+
+      if ((path === '/api/vault/stl' || path === '/forge/api/vault/stl') && req.method === 'GET') {
+        const rawFile = url.searchParams.get('file') || '';
+        const clean = basename(rawFile);
+        if (!rawFile || rawFile !== clean || !SAFE_STL_RE.test(clean)) {
+          return json(res, 400, { ok: false, error: 'Invalid STL filename' }, corsHeaders);
+        }
+        const outDir = cfg.localOutDir ?? join(tmpdir(), 'shapecast-forge-out');
+        const full = join(outDir, clean);
+        if (!existsSync(full)) {
+          return json(res, 404, { ok: false, error: 'STL artifact not found' }, corsHeaders);
+        }
+        const bytes = readFileSync(full);
+        const acceptEnc = String(req.headers['accept-encoding'] ?? '');
+        if (acceptEnc.includes('gzip') && bytes.byteLength > 32768) {
+          const gz = gzipSync(bytes, { level: 5 });
+          res.writeHead(200, {
+            'Content-Type': 'application/sla',
+            'Content-Encoding': 'gzip',
+            'Content-Length': String(gz.byteLength),
+            'Cache-Control': 'public, max-age=3600',
+            ...corsHeaders,
+          });
+          res.end(gz);
+          return;
+        }
+        res.writeHead(200, {
+          'Content-Type': 'application/sla',
+          'Content-Length': String(bytes.byteLength),
+          'Cache-Control': 'public, max-age=3600',
+          ...corsHeaders,
+        });
+        res.end(bytes);
+        return;
       }
 
       if (

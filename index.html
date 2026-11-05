@@ -324,14 +324,113 @@
     text-align: center;
   }
 
+  /* Live Forge Showroom Vault & Instant STL Bar */
+  #vaultBar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 6px 10px;
+    overflow: hidden;
+  }
+  .vault-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    padding-right: 8px;
+    border-right: 1px solid var(--line);
+  }
+  .vault-title {
+    font: 600 11px/1 var(--font-head);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .stl-import-pill {
+    font: 600 11px/1 var(--font-body);
+    padding: 4px 8px;
+    border-radius: 999px;
+    border: 1px dashed var(--line-bright);
+    color: var(--accent);
+    cursor: pointer;
+    white-space: nowrap;
+    margin: 0;
+    transition:
+      border-color 0.15s,
+      background 0.15s;
+  }
+  .stl-import-pill:hover {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+  }
+  #vaultList {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    overflow-x: auto;
+    flex: 1;
+    scrollbar-width: thin;
+    padding-bottom: 1px;
+  }
+  .vault-item {
+    display: inline-flex;
+    align-items: center;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    flex-shrink: 0;
+    overflow: hidden;
+    transition: border-color 0.14s;
+  }
+  .vault-item:hover,
+  .vault-item.active {
+    border-color: var(--accent);
+  }
+  .vault-item .v-load {
+    border: none;
+    background: transparent;
+    padding: 4px 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11.5px;
+    color: var(--fg);
+    border-radius: 0;
+  }
+  .vault-item .v-load:hover {
+    background: color-mix(in srgb, var(--fg) 6%, transparent);
+  }
+  .vault-item .v-meta {
+    font: 600 10px var(--font-num);
+    color: var(--muted);
+  }
+  .vault-item .v-add {
+    border: none;
+    border-left: 1px solid var(--line);
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+    color: var(--accent);
+    font: 600 10.5px var(--font-num);
+    padding: 4px 7px;
+    border-radius: 0;
+    title: 'Add to current build plate';
+  }
+  .vault-item .v-add:hover {
+    background: var(--accent);
+    color: var(--accent-ink);
+  }
+
   /* Hero Optical Viewport & Floating HUD */
   #viewWrap {
     position: relative;
     background: var(--viewport-bg);
     border: 1px solid var(--line);
     border-radius: 12px;
-    min-height: 500px;
-    height: min(76vh, 780px);
+    min-height: 480px;
+    height: min(71vh, 740px);
     overflow: hidden;
     box-shadow:
       inset 0 0 60px rgba(0, 0, 0, 0.35),
@@ -399,7 +498,7 @@
   #refPipWrap {
     position: absolute;
     left: 12px;
-    bottom: 62px;
+    bottom: 84px;
     width: 88px;
     background: var(--glass);
     backdrop-filter: blur(8px);
@@ -426,7 +525,7 @@
   #bboxReadout {
     position: absolute;
     right: 14px;
-    bottom: 62px;
+    bottom: 84px;
     font: 600 11.5px var(--font-num);
     color: var(--fg);
     background: var(--glass);
@@ -437,25 +536,50 @@
     font-variant-numeric: tabular-nums;
     z-index: 4;
   }
-  /* 405nm UV Layer X-Ray Scrubber Dock */
+  /* 405nm UV Layer X-Ray Scrubber + FEP Peel-Stress Waveform Dock */
   #uvSlicerBar {
     position: absolute;
     left: 12px;
     right: 12px;
     bottom: 10px;
     display: flex;
-    align-items: center;
-    gap: 10px;
+    flex-direction: column;
+    gap: 4px;
     background: var(--glass);
     backdrop-filter: blur(12px);
     border: 1px solid var(--line);
     border-radius: 9px;
-    padding: 6px 10px;
+    padding: 6px 10px 7px;
     z-index: 4;
   }
   #uvSlicerBar.slicing {
     border-color: var(--uv);
     box-shadow: 0 0 18px rgba(168, 85, 247, 0.28);
+  }
+  .uv-wave-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  #peelSparkline {
+    flex: 1;
+    height: 24px;
+    width: 100%;
+    display: block;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--bg) 65%, transparent);
+  }
+  #peelPeakBadge {
+    font: 600 10.5px var(--font-num);
+    color: var(--muted);
+    white-space: nowrap;
+    min-width: 175px;
+    text-align: right;
+  }
+  .uv-ctrl-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
   }
   #uvScanBtn {
     font-size: 11.5px;
@@ -485,6 +609,15 @@
   }
   #uvSlicerBar.slicing #uvSliceReadout {
     color: var(--uv-bright);
+  }
+  .batch-callout {
+    margin-top: 7px;
+    padding: 5px 8px;
+    border-radius: 6px;
+    font: 600 11px/1.35 var(--font-num);
+    background: color-mix(in srgb, var(--green) 13%, var(--bg));
+    border: 1px solid color-mix(in srgb, var(--green) 42%, var(--line));
+    color: var(--green);
   }
 
   #viewNotice {
@@ -770,12 +903,12 @@
         </select>
       </div>
       <div id="dropWell" class="well">
-        Drop reference photo / turnarounds or
+        Drop reference photo (or local <code>.stl</code>) or
         <label class="inline-label"
           ><input
             id="photoInput"
             type="file"
-            accept="image/*"
+            accept="image/*,.stl"
             capture="environment"
             multiple
             hidden
@@ -907,6 +1040,18 @@
   </section>
 
   <section class="col">
+    <div id="vaultBar">
+      <div class="vault-head">
+        <span class="vault-title">Forge Vault</span>
+        <label class="stl-import-pill" title="Import any local .stl mesh onto the Saturn 3 plate"
+          ><input id="stlInput" type="file" accept=".stl" multiple hidden />+ Import .STL</label
+        >
+      </div>
+      <div id="vaultList">
+        <span class="small">Scanning Forge Vault...</span>
+      </div>
+    </div>
+
     <div id="viewWrap">
       <canvas id="viewport"></canvas>
 
@@ -948,18 +1093,27 @@
       <div id="bboxReadout"></div>
 
       <div id="uvSlicerBar">
-        <button type="button" id="uvScanBtn" title="Animate 405nm UV curing layers bottom-to-top">
-          &#9654; 405nm UV Scan
-        </button>
-        <input
-          id="uvSliceRange"
-          type="range"
-          min="0"
-          max="1000"
-          value="1000"
-          aria-label="405nm UV Z-Layer X-Ray Slicer"
-        />
-        <span id="uvSliceReadout">FULL MESH • Z X-RAY READY</span>
+        <div class="uv-wave-row">
+          <span class="small num" style="font-size: 10.5px; white-space: nowrap; color: var(--uv-bright)"
+            >FEP PEEL WAVE</span
+          >
+          <canvas id="peelSparkline" width="520" height="26"></canvas>
+          <span id="peelPeakBadge">PEAK PEEL • &mdash;</span>
+        </div>
+        <div class="uv-ctrl-row">
+          <button type="button" id="uvScanBtn" title="Animate 405nm UV curing layers bottom-to-top">
+            &#9654; 405nm UV Scan
+          </button>
+          <input
+            id="uvSliceRange"
+            type="range"
+            min="0"
+            max="1000"
+            value="1000"
+            aria-label="405nm UV Z-Layer X-Ray Slicer"
+          />
+          <span id="uvSliceReadout">FULL MESH • Z X-RAY READY</span>
+        </div>
       </div>
 
       <div id="viewNotice" class="hidden">
@@ -1028,6 +1182,40 @@
             &#x21bb; Rotate Z 90&deg;
           </button>
         </div>
+
+        <div
+          class="row"
+          style="
+            justify-content: space-between;
+            margin-top: 10px;
+            margin-bottom: 5px;
+            padding-top: 8px;
+            border-top: 1px solid var(--line);
+          "
+        >
+          <span class="small" style="font-weight: 600; color: var(--fg)"
+            >Squadron Auto-Nesting (0s extra Z-time)</span
+          >
+          <span class="small num" id="packCountLabel">1 part on plate</span>
+        </div>
+        <div class="pill-row" id="platePackRow" style="margin-top: 0">
+          <button type="button" class="pill active" data-pack="1">1&times; Solo</button>
+          <button type="button" class="pill" data-pack="2">2&times; Pair</button>
+          <button type="button" class="pill" data-pack="4">4&times; Squad</button>
+          <button
+            type="button"
+            class="pill"
+            data-pack="max"
+            id="packMaxBtn"
+            title="Auto-pack maximum copies onto the 218.88 x 122.88 mm Saturn 3 plate"
+          >
+            &#9889; Max Plate
+          </button>
+          <button type="button" class="pill hidden" id="clearExtraBtn" title="Remove mixed Vault parts">
+            Clear +Plate
+          </button>
+        </div>
+        <div id="batchSavingsBadge" class="batch-callout hidden"></div>
       </div>
 
       <div id="checks" class="chips"></div>
@@ -2291,6 +2479,261 @@ function transformMeshTriangles(
   return { tris: out, bbox, scaleFactor };
 }
 
+/**
+ * Compute how many copies of a given bounding box can nest onto the Elegoo Saturn 3 (12K)
+ * 218.88 x 122.88 mm build plate with support-raft clearance margins (capped at 24).
+ */
+function maxCopiesOnSaturn3(bbox, { marginMm = 4.5, edgePadMm = 3.0 } = {}) {
+  if (!bbox || !bbox.size) return { count: 1, rotate90: false };
+  const usableW = SATURN3.build[0] - edgePadMm * 2;
+  const usableD = SATURN3.build[1] - edgePadMm * 2;
+  const [sx, sy] = bbox.size;
+  if (!(sx > 0 && sy > 0)) return { count: 1, rotate90: false };
+
+  const cols0 = Math.floor((usableW + marginMm) / (sx + marginMm));
+  const rows0 = Math.floor((usableD + marginMm) / (sy + marginMm));
+  const c0 = Math.max(0, cols0 * rows0);
+
+  const cols90 = Math.floor((usableW + marginMm) / (sy + marginMm));
+  const rows90 = Math.floor((usableD + marginMm) / (sx + marginMm));
+  const c90 = Math.max(0, cols90 * rows90);
+
+  if (c90 > c0) {
+    return { count: Math.max(1, Math.min(24, c90)), rotate90: true };
+  }
+  return { count: Math.max(1, Math.min(24, c0)), rotate90: false };
+}
+
+/**
+ * Shelf-pack multiple 3D mesh items onto the Elegoo Saturn 3 (12K) build plate,
+ * centering each shelf row and centering the overall multi-part array around (0, 0).
+ */
+function packBuildPlate(specs, { marginMm = 4.5, edgePadMm = 3.0 } = {}) {
+  if (!specs || specs.length === 0) {
+    return { items: [], bbox: null, overflowCount: 0 };
+  }
+  if (specs.length === 1) {
+    return { items: specs, bbox: specs[0].bbox, overflowCount: 0 };
+  }
+  const usableW = SATURN3.build[0] - edgePadMm * 2;
+  const usableD = SATURN3.build[1] - edgePadMm * 2;
+
+  // Sort tallest/widest footprint first only when mixed parts are present, preserving order otherwise
+  const rows = [];
+  let curRow = { items: [], width: 0, depth: 0 };
+
+  for (const sp of specs) {
+    const [sx, sy] = sp.bbox.size;
+    const neededW = curRow.items.length === 0 ? sx : curRow.width + marginMm + sx;
+    if (curRow.items.length > 0 && neededW > usableW + 1e-6) {
+      rows.push(curRow);
+      curRow = { items: [sp], width: sx, depth: sy };
+    } else {
+      curRow.items.push(sp);
+      curRow.width = neededW;
+      if (sy > curRow.depth) curRow.depth = sy;
+    }
+  }
+  if (curRow.items.length > 0) rows.push(curRow);
+
+  const totalDepth =
+    rows.reduce((acc, r) => acc + r.depth, 0) + Math.max(0, rows.length - 1) * marginMm;
+  let cursorY = -totalDepth / 2;
+  let overflowCount = 0;
+
+  let gMinX = Infinity,
+    gMinY = Infinity,
+    gMinZ = Infinity;
+  let gMaxX = -Infinity,
+    gMaxY = -Infinity,
+    gMaxZ = -Infinity;
+
+  const placed = [];
+  for (const row of rows) {
+    let cursorX = -row.width / 2;
+    const rowCenterY = cursorY + row.depth / 2;
+    for (const sp of row.items) {
+      const [sx, sy, sz] = sp.bbox.size;
+      const cx = cursorX + sx / 2;
+      const cy = rowCenterY;
+      cursorX += sx + marginMm;
+
+      // Current sp is centered at (0,0) in X/Y; shift by (cx, cy, 0)
+      const oldCenterX = 0.5 * (sp.bbox.min[0] + sp.bbox.max[0]);
+      const oldCenterY = 0.5 * (sp.bbox.min[1] + sp.bbox.max[1]);
+      const dx = cx - oldCenterX;
+      const dy = cy - oldCenterY;
+
+      const shiftedTris = new Float32Array(sp.tris.length);
+      for (let i = 0; i < sp.tris.length; i += 3) {
+        shiftedTris[i] = sp.tris[i] + dx;
+        shiftedTris[i + 1] = sp.tris[i + 1] + dy;
+        shiftedTris[i + 2] = sp.tris[i + 2];
+      }
+      const itemBbox = {
+        min: [sp.bbox.min[0] + dx, sp.bbox.min[1] + dy, sp.bbox.min[2]],
+        max: [sp.bbox.max[0] + dx, sp.bbox.max[1] + dy, sp.bbox.max[2]],
+        size: [sx, sy, sz],
+      };
+      if (
+        Math.abs(itemBbox.min[0]) > usableW / 2 + edgePadMm + 0.05 ||
+        Math.abs(itemBbox.max[0]) > usableW / 2 + edgePadMm + 0.05 ||
+        Math.abs(itemBbox.min[1]) > usableD / 2 + edgePadMm + 0.05 ||
+        Math.abs(itemBbox.max[1]) > usableD / 2 + edgePadMm + 0.05
+      ) {
+        overflowCount++;
+      }
+      gMinX = Math.min(gMinX, itemBbox.min[0]);
+      gMinY = Math.min(gMinY, itemBbox.min[1]);
+      gMinZ = Math.min(gMinZ, itemBbox.min[2]);
+      gMaxX = Math.max(gMaxX, itemBbox.max[0]);
+      gMaxY = Math.max(gMaxY, itemBbox.max[1]);
+      gMaxZ = Math.max(gMaxZ, itemBbox.max[2]);
+
+      placed.push({
+        ...sp,
+        tris: shiftedTris,
+        bbox: itemBbox,
+      });
+    }
+    cursorY += row.depth + marginMm;
+  }
+
+  const combinedBbox = {
+    min: [gMinX, gMinY, gMinZ],
+    max: [gMaxX, gMaxY, gMaxZ],
+    size: [gMaxX - gMinX, gMaxY - gMinY, gMaxZ - gMinZ],
+  };
+  return { items: placed, bbox: combinedBbox, overflowCount };
+}
+
+/**
+ * Exact Green's-Theorem Z-layer cross-sectional curing area profiler (mm^2 vs Z)
+ * to quantify FEP suction peel stress across the Elegoo Saturn 3 UV LCD vat.
+ */
+function computePeelForceProfile(items, bbox, { bins = 64 } = {}) {
+  const areasMm2 = new Float32Array(bins);
+  if (!items || !items.length || !bbox || !(bbox.size[2] > 0)) {
+    return { areasMm2, peakMm2: 0, peakRatioZ: 0, riskLevel: 'low' };
+  }
+  const minZ = bbox.min[2];
+  const spanZ = Math.max(0.05, bbox.size[2]);
+  const dz = spanZ / bins;
+  const flatPlateBins = new Float32Array(bins);
+
+  for (const it of items) {
+    const tris = it.tris;
+    if (!tris || !tris.length) continue;
+    for (let i = 0; i < tris.length; i += 9) {
+      const x0 = tris[i],
+        y0 = tris[i + 1],
+        z0 = tris[i + 2];
+      const x1 = tris[i + 3],
+        y1 = tris[i + 4],
+        z1 = tris[i + 5];
+      const x2 = tris[i + 6],
+        y2 = tris[i + 7],
+        z2 = tris[i + 8];
+
+      const tMinZ = Math.min(z0, z1, z2);
+      const tMaxZ = Math.max(z0, z1, z2);
+
+      // Capture coplanar horizontal islands/bases that create sudden FEP snap suction
+      if (tMaxZ - tMinZ < dz * 0.25) {
+        const ux = x1 - x0,
+          uy = y1 - y0;
+        const vx = x2 - x0,
+          vy = y2 - y0;
+        const horizArea = 0.5 * Math.abs(ux * vy - uy * vx);
+        const bIdx = Math.max(0, Math.min(bins - 1, Math.floor((tMinZ - minZ) / dz)));
+        flatPlateBins[bIdx] += horizArea;
+        continue;
+      }
+
+      const bStart = Math.max(0, Math.floor((tMinZ - minZ) / dz));
+      const bEnd = Math.min(bins - 1, Math.floor((tMaxZ - minZ) / dz));
+
+      for (let b = bStart; b <= bEnd; b++) {
+        // Offset sample plane slightly from rational midpoints to avoid exact vertex hits
+        const zb = minZ + (b + 0.50137) * dz;
+        if (zb <= tMinZ || zb >= tMaxZ) continue;
+
+        let upX = 0,
+          upY = 0,
+          downX = 0,
+          downY = 0,
+          hasUp = false,
+          hasDown = false;
+
+        // Directed edge 0 -> 1
+        if ((z0 < zb) !== (z1 < zb)) {
+          const t = (zb - z0) / (z1 - z0);
+          const px = x0 + t * (x1 - x0);
+          const py = y0 + t * (y1 - y0);
+          if (z0 < z1) {
+            upX = px;
+            upY = py;
+            hasUp = true;
+          } else {
+            downX = px;
+            downY = py;
+            hasDown = true;
+          }
+        }
+        // Directed edge 1 -> 2
+        if ((z1 < zb) !== (z2 < zb)) {
+          const t = (zb - z1) / (z2 - z1);
+          const px = x1 + t * (x2 - x1);
+          const py = y1 + t * (y2 - y1);
+          if (z1 < z2) {
+            upX = px;
+            upY = py;
+            hasUp = true;
+          } else {
+            downX = px;
+            downY = py;
+            hasDown = true;
+          }
+        }
+        // Directed edge 2 -> 0
+        if ((z2 < zb) !== (z0 < zb)) {
+          const t = (zb - z2) / (z0 - z2);
+          const px = x2 + t * (x0 - x2);
+          const py = y2 + t * (y0 - y2);
+          if (z2 < z0) {
+            upX = px;
+            upY = py;
+            hasUp = true;
+          } else {
+            downX = px;
+            downY = py;
+            hasDown = true;
+          }
+        }
+
+        if (hasUp && hasDown) {
+          areasMm2[b] += 0.5 * (downX * upY - downY * upX);
+        }
+      }
+    }
+  }
+
+  let peakMm2 = 0;
+  let peakBin = 0;
+  for (let b = 0; b < bins; b++) {
+    const val = Math.max(Math.abs(areasMm2[b]), flatPlateBins[b]);
+    areasMm2[b] = val;
+    if (val > peakMm2) {
+      peakMm2 = val;
+      peakBin = b;
+    }
+  }
+
+  const peakRatioZ = bins > 1 ? peakBin / (bins - 1) : 0;
+  const riskLevel = peakMm2 > 2200 ? 'high' : peakMm2 > 950 ? 'moderate' : 'low';
+  return { areasMm2, peakMm2, peakRatioZ, riskLevel };
+}
+
 // --- stl.js ---
 
 function concatTriangles(list) {
@@ -2349,6 +2792,109 @@ function readStlHeader(buf) {
   return {
     header: new TextDecoder().decode(new Uint8Array(buf, 0, 80)).replace(/\0+$/, ''),
     triangles: dv.getUint32(80, true),
+  };
+}
+
+/**
+ * Parse a binary (or ASCII fallback) STL ArrayBuffer into a centered, Z=0 grounded Float32Array
+ * triangle soup (9 floats per triangle) with exact signed tetrahedral volume and bounding box.
+ */
+function parseStlBuffer(buf) {
+  const byteLen = buf.byteLength;
+  if (byteLen < 84) throw new Error('STL file is too small (< 84 bytes).');
+  const dv = new DataView(buf);
+  const triCount = dv.getUint32(80, true);
+  const expectedBytes = 84 + triCount * 50;
+
+  let tris;
+  if (triCount > 0 && triCount <= 2_000_000 && expectedBytes <= byteLen && byteLen - expectedBytes < 512) {
+    tris = new Float32Array(triCount * 9);
+    let o = 84;
+    for (let t = 0; t < triCount; t++) {
+      o += 12; // skip face normal
+      const base = t * 9;
+      for (let k = 0; k < 9; k++) {
+        tris[base + k] = dv.getFloat32(o, true);
+        o += 4;
+      }
+      o += 2; // attr byte count
+    }
+  } else {
+    // ASCII STL fallback
+    const text = new TextDecoder().decode(new Uint8Array(buf));
+    const verts = [];
+    const re = /vertex\s+([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)\s+([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)\s+([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)/g;
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      verts.push(Number(m[1]), Number(m[2]), Number(m[3]));
+    }
+    const cleanLen = Math.floor(verts.length / 9) * 9;
+    if (cleanLen === 0) throw new Error('Unrecognized or empty STL file.');
+    tris = new Float32Array(verts.slice(0, cleanLen));
+  }
+
+  let minX = Infinity,
+    minY = Infinity,
+    minZ = Infinity;
+  let maxX = -Infinity,
+    maxY = -Infinity,
+    maxZ = -Infinity;
+  let signedVol6 = 0;
+
+  for (let i = 0; i < tris.length; i += 9) {
+    const ax = tris[i],
+      ay = tris[i + 1],
+      az = tris[i + 2];
+    const bx = tris[i + 3],
+      by = tris[i + 4],
+      bz = tris[i + 5];
+    const cx = tris[i + 6],
+      cy = tris[i + 7],
+      cz = tris[i + 8];
+    if (ax < minX) minX = ax;
+    if (bx < minX) minX = bx;
+    if (cx < minX) minX = cx;
+    if (ax > maxX) maxX = ax;
+    if (bx > maxX) maxX = bx;
+    if (cx > maxX) maxX = cx;
+
+    if (ay < minY) minY = ay;
+    if (by < minY) minY = by;
+    if (cy < minY) minY = cy;
+    if (ay > maxY) maxY = ay;
+    if (by > maxY) maxY = by;
+    if (cy > maxY) maxY = cy;
+
+    if (az < minZ) minZ = az;
+    if (bz < minZ) minZ = bz;
+    if (cz < minZ) minZ = cz;
+    if (az > maxZ) maxZ = az;
+    if (bz > maxZ) maxZ = bz;
+    if (cz > maxZ) maxZ = cz;
+
+    signedVol6 += ax * (by * cz - bz * cy) - ay * (bx * cz - bz * cx) + az * (bx * cy - by * cx);
+  }
+
+  const shiftX = -0.5 * (minX + maxX);
+  const shiftY = -0.5 * (minY + maxY);
+  const shiftZ = -minZ;
+  for (let i = 0; i < tris.length; i += 3) {
+    tris[i] += shiftX;
+    tris[i + 1] += shiftY;
+    tris[i + 2] += shiftZ;
+  }
+
+  const bbox = {
+    min: [minX + shiftX, minY + shiftY, 0],
+    max: [maxX + shiftX, maxY + shiftY, maxZ + shiftZ],
+    size: [maxX - minX, maxY - minY, maxZ - minZ],
+  };
+  const volumeMm3 = Math.max(1, Math.abs(signedVol6) / 6);
+  return {
+    tris,
+    triangleCount: tris.length / 9,
+    bbox,
+    volumeMm3,
   };
 }
 
@@ -3668,6 +4214,11 @@ const state = {
   forgeReady: false,
   forgeMesh: null,
   meshTransform: { tiltDeg: 0, rotZDeg: 0, targetMm: null },
+  packCount: 1,
+  extraPlateMeshes: [],
+  peelProfile: { areasMm2: new Float32Array(64), peakMm2: 0, peakRatioZ: 0, riskLevel: 'low' },
+  vaultItems: [],
+  activeVaultFile: '',
   turntable: false,
   uvScanAnim: null,
   lastBlenderCode: null,
@@ -3763,6 +4314,107 @@ function addChat(role, text) {
   d.scrollIntoView({ block: 'nearest' });
 }
 
+function drawPeelSparkline(ratio = 1) {
+  const cvs = /** @type {HTMLCanvasElement | null} */ ($('peelSparkline'));
+  const badge = $('peelPeakBadge');
+  if (!cvs) return;
+  const ctx = cvs.getContext('2d');
+  if (!ctx) return;
+
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const w = Math.max(180, cvs.clientWidth || 520);
+  const h = Math.max(22, cvs.clientHeight || 26);
+  if (cvs.width !== Math.round(w * dpr) || cvs.height !== Math.round(h * dpr)) {
+    cvs.width = Math.round(w * dpr);
+    cvs.height = Math.round(h * dpr);
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+
+  const { areasMm2, peakMm2, peakRatioZ, riskLevel } = state.peelProfile;
+  const bins = areasMm2.length;
+  if (!(peakMm2 > 0) || !bins) {
+    if (badge) {
+      badge.textContent = 'PEAK PEEL • —';
+      badge.style.color = 'var(--muted)';
+    }
+    return;
+  }
+
+  const maxScale = Math.max(peakMm2 * 1.12, 350);
+  const strokeColor =
+    riskLevel === 'high' ? '#f87171' : riskLevel === 'moderate' ? '#fbbf24' : '#c084fc';
+  const fillTop =
+    riskLevel === 'high'
+      ? 'rgba(248, 113, 113, 0.42)'
+      : riskLevel === 'moderate'
+        ? 'rgba(251, 191, 36, 0.36)'
+        : 'rgba(168, 85, 247, 0.42)';
+
+  const grad = ctx.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0, fillTop);
+  grad.addColorStop(1, 'rgba(168, 85, 247, 0.03)');
+
+  ctx.beginPath();
+  ctx.moveTo(0, h - 1);
+  for (let b = 0; b < bins; b++) {
+    const x = (b / (bins - 1)) * w;
+    const y = h - 2 - (areasMm2[b] / maxScale) * (h - 5);
+    ctx.lineTo(x, y);
+  }
+  ctx.lineTo(w, h - 1);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  ctx.beginPath();
+  for (let b = 0; b < bins; b++) {
+    const x = (b / (bins - 1)) * w;
+    const y = h - 2 - (areasMm2[b] / maxScale) * (h - 5);
+    if (b === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.strokeStyle = strokeColor;
+  ctx.lineWidth = 1.6;
+  ctx.stroke();
+
+  // Peak dot
+  const px = peakRatioZ * w;
+  const py = h - 2 - (peakMm2 / maxScale) * (h - 5);
+  ctx.beginPath();
+  ctx.arc(px, py, 2.5, 0, Math.PI * 2);
+  ctx.fillStyle = strokeColor;
+  ctx.fill();
+
+  // Active 405nm UV Slice Playhead
+  if (ratio < 0.999) {
+    const cx = Math.max(1, Math.min(w - 1, ratio * w));
+    ctx.beginPath();
+    ctx.moveTo(cx, 0);
+    ctx.lineTo(cx, h);
+    ctx.strokeStyle = '#e9d5ff';
+    ctx.lineWidth = 1.8;
+    ctx.stroke();
+
+    const curBin = Math.max(0, Math.min(bins - 1, Math.floor(ratio * (bins - 1))));
+    const sliceArea = Math.round(areasMm2[curBin]);
+    if (badge) {
+      badge.textContent = `SLICE ${sliceArea.toLocaleString()} mm² • PEAK ${Math.round(peakMm2).toLocaleString()} mm²`;
+      badge.style.color = 'var(--uv-bright)';
+    }
+  } else if (badge) {
+    const tag =
+      riskLevel === 'high' ? 'HIGH SUCTION' : riskLevel === 'moderate' ? 'MOD FEP' : 'LOW SUCTION';
+    badge.textContent = `PEAK ${Math.round(peakMm2).toLocaleString()} mm² • ${tag}`;
+    badge.style.color =
+      riskLevel === 'high'
+        ? 'var(--red)'
+        : riskLevel === 'moderate'
+          ? 'var(--amber)'
+          : 'var(--green)';
+  }
+}
+
 function updateUvSliceHud() {
   const slider = /** @type {HTMLInputElement | null} */ ($('uvSliceRange'));
   const readout = $('uvSliceReadout');
@@ -3772,10 +4424,13 @@ function updateUvSliceHud() {
   const sz = state.result?.bbox?.size?.[2] ?? 0;
   const totalLayers = sz > 0 ? Math.max(1, Math.ceil(sz / (state.layerUm / 1000))) : 0;
   viewport?.setSliceRatio(ratio, sz);
+  drawPeelSparkline(ratio);
   if (ratio >= 0.999 || totalLayers === 0) {
     bar?.classList.remove('slicing');
     readout.textContent =
-      totalLayers > 0 ? `FULL MESH • ${totalLayers.toLocaleString()} LAYERS` : 'FULL MESH • Z X-RAY READY';
+      totalLayers > 0
+        ? `FULL MESH • ${totalLayers.toLocaleString()} LAYERS`
+        : 'FULL MESH • Z X-RAY READY';
   } else {
     bar?.classList.add('slicing');
     const curLayer = Math.max(1, Math.round(ratio * totalLayers));
@@ -3837,28 +4492,86 @@ function render() {
     const failed = !fm.manifold?.ok;
     const rawTris = fm.rawTris || fm.tris;
     const { tris, bbox, scaleFactor } = transformMeshTriangles(rawTris, state.meshTransform);
+    const primaryBbox = bbox || fm.bbox;
     const baseVolMm3 = fm.rawVolumeMm3 ?? fm.volumeMm3 ?? 0;
-    const scaledVolMm3 = baseVolMm3 * Math.pow(scaleFactor, 3);
-    const scaledVolMl = Number((scaledVolMm3 / 1000).toFixed(2));
+    const singleVolMm3 = baseVolMm3 * Math.pow(scaleFactor, 3);
 
-    state.items = [
-      {
-        part: { id: 'forge_mesh', type: 'mesh' },
+    const maxFit = maxCopiesOnSaturn3(primaryBbox);
+    if ($('packMaxBtn')) {
+      $('packMaxBtn').textContent = `\u26A1 Max Plate (${maxFit.count}\u00D7)`;
+    }
+
+    const specs = [];
+    const copyCount = Math.max(1, state.packCount || 1);
+    for (let k = 0; k < copyCount; k++) {
+      specs.push({
+        part: { id: k === 0 ? 'forge_mesh' : `forge_mesh_${k}`, type: 'mesh' },
         tris,
-        bbox: bbox || fm.bbox,
+        bbox: primaryBbox,
         failed,
         failure: fm.manifold?.errors?.[0] ?? null,
-      },
-    ];
-    state.result = runMeshPrintChecks(bbox || fm.bbox, scaledVolMm3, !failed, {
+      });
+    }
+
+    let extraVolMm3 = 0;
+    state.extraPlateMeshes.forEach((ex, idx) => {
+      const exOriented = transformMeshTriangles(ex.rawTris, {
+        tiltDeg: state.meshTransform.tiltDeg,
+        rotZDeg: state.meshTransform.rotZDeg,
+        targetMm: null,
+      });
+      if (exOriented.bbox) {
+        extraVolMm3 += ex.rawVolumeMm3 || 0;
+        specs.push({
+          part: { id: `vault_extra_${idx}`, type: 'mesh' },
+          tris: exOriented.tris,
+          bbox: exOriented.bbox,
+          failed: false,
+          failure: null,
+        });
+      }
+    });
+
+    const packed = packBuildPlate(specs);
+    const totalVolMm3 = singleVolMm3 * copyCount + extraVolMm3;
+    const totalVolMl = Number((totalVolMm3 / 1000).toFixed(2));
+    const totalParts = packed.items.length;
+
+    state.items = packed.items;
+    state.result = runMeshPrintChecks(packed.bbox || primaryBbox, totalVolMm3, !failed, {
       layerUm: state.layerUm,
     });
-    viewport?.setItems(state.items, null);
+    state.peelProfile = computePeelForceProfile(state.items, state.result.bbox);
+    viewport?.setItems(state.items, state.selectedId);
     $('partsTableWrap')?.classList.add('hidden');
     $('orientDeck')?.classList.remove('hidden');
     if ($('orientLabel')) {
       $('orientLabel').textContent = `${state.meshTransform.tiltDeg}° tilt • ${state.meshTransform.rotZDeg}° Z`;
     }
+    if ($('packCountLabel')) {
+      $('packCountLabel').textContent =
+        totalParts === 1 ? '1 part on plate' : `${totalParts} parts nested`;
+    }
+    $('clearExtraBtn')?.classList.toggle('hidden', state.extraPlateMeshes.length === 0);
+
+    const savingsEl = $('batchSavingsBadge');
+    if (savingsEl) {
+      if (totalParts > 1 && state.result.bbox) {
+        const tel = estimateSaturn3Telemetry(state.result.bbox, totalVolMm3, {
+          layerUm: state.layerUm,
+        });
+        const minsPerPart = Math.max(1, Math.round(tel.printMinutes / totalParts));
+        const savedMins = Math.max(1, (totalParts - 1) * tel.printMinutes);
+        const sHrs = Math.floor(savedMins / 60);
+        const sRem = savedMins % 60;
+        const savedStr = sHrs > 0 ? `${sHrs}h ${String(sRem).padStart(2, '0')}m` : `${sRem}m`;
+        savingsEl.textContent = `\u26A1 ${totalParts}\u00D7 parts cured in one ${tel.printTimeLabel} Z-cycle (${minsPerPart}m/part \u2022 ${savedStr} saved vs solo runs)`;
+        savingsEl.classList.remove('hidden');
+      } else {
+        savingsEl.classList.add('hidden');
+      }
+    }
+
     const sum = $('forgeSummary');
     if (sum) {
       sum.classList.remove('hidden');
@@ -3868,7 +4581,7 @@ function render() {
           ? `${Number(stlTris).toLocaleString()} STL tris (${fm.triangleCount.toLocaleString()} preview)`
           : `${fm.triangleCount.toLocaleString()} tris`;
       const engineTag = fm.qualityMetrics?.pythonCode ? 'Blender 4.3 CAD' : 'Hunyuan3D 2.1';
-      sum.textContent = `${engineTag}: ${triLabel} | ${scaledVolMl} mL | AlienPC STL: ${fm.stlPath}`;
+      sum.textContent = `${engineTag} (${totalParts}\u00D7): ${triLabel} | ${totalVolMl} mL | ${fm.stlPath}`;
     }
     renderChecks(failed);
     $('assumptions').classList.add('hidden');
@@ -3881,7 +4594,7 @@ function render() {
       : '';
     const canExportMesh = !failed && !!caps.downloads && fm.preview?.isFullMesh !== false;
     $('exportBtn').disabled = !canExportMesh;
-    $('exportNote').textContent = fm.stlPath ? `AlienPC: ${fm.stlPath}` : '';
+    $('exportNote').textContent = fm.stlPath ? `${fm.stlPath}` : '';
     updateTelemetryCards();
     return;
   }
@@ -3901,6 +4614,7 @@ function render() {
     layerUm: state.layerUm,
     orientation: list.print.orientation,
   });
+  state.peelProfile = computePeelForceProfile(state.items, state.result.bbox);
   viewport?.setItems(state.items, state.selectedId);
   renderParts();
   renderChecks(anyFailed);
@@ -4160,7 +4874,7 @@ function addPhotos(files) {
 }
 
 // ---------- Mesh Forge & Standalone LAN Studio ----------
-const UI_VERSION = '5.0.0';
+const UI_VERSION = '6.0.0';
 const STARTER_BRIEFS = {
   isd: {
     mode: 'blender',
@@ -4205,16 +4919,210 @@ function stopUvScanAnim() {
 
 function resetMeshTransformUi() {
   state.meshTransform = { tiltDeg: 0, rotZDeg: 0, targetMm: null };
+  state.packCount = 1;
+  state.extraPlateMeshes = [];
   const deck = $('orientDeck');
   if (deck) {
     deck.querySelectorAll('[data-tilt]').forEach((b) => {
       b.classList.toggle('active', b.getAttribute('data-tilt') === '0');
     });
   }
+  $('platePackRow')
+    ?.querySelectorAll('[data-pack]')
+    .forEach((b) => {
+      b.classList.toggle('active', b.getAttribute('data-pack') === '1');
+    });
   $('rotZ90Btn')?.classList.remove('active');
   stopUvScanAnim();
   const slider = /** @type {HTMLInputElement | null} */ ($('uvSliceRange'));
   if (slider) slider.value = '1000';
+}
+
+function getApiBase() {
+  return window.location.pathname.startsWith('/forge') ? '/forge/api' : '/api';
+}
+
+function renderVaultStrip() {
+  const listEl = $('vaultList');
+  if (!listEl) return;
+  listEl.innerHTML = '';
+  if (!state.vaultItems.length) {
+    const empty = document.createElement('span');
+    empty.className = 'small';
+    empty.textContent = 'Generate a mesh or click + Import .STL to populate your plate.';
+    listEl.append(empty);
+    return;
+  }
+  for (const item of state.vaultItems) {
+    const card = document.createElement('div');
+    card.className = 'vault-item' + (state.activeVaultFile === item.filename ? ' active' : '');
+
+    const loadBtn = document.createElement('button');
+    loadBtn.type = 'button';
+    loadBtn.className = 'v-load';
+    loadBtn.dataset.vaultLoad = item.filename;
+    loadBtn.title = `Load ${item.label} (${item.triangles.toLocaleString()} tris) onto build plate`;
+
+    const dot = document.createElement('span');
+    dot.className = 'swatch';
+    dot.style.background = item.engine === 'blender' ? '#f59e0b' : '#a855f7';
+
+    const title = document.createElement('span');
+    title.textContent = item.label;
+
+    const meta = document.createElement('span');
+    meta.className = 'v-meta';
+    meta.textContent = `${Math.max(1, Math.round(item.triangles / 1000))}k`;
+
+    loadBtn.append(dot, title, meta);
+
+    const addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.className = 'v-add';
+    addBtn.dataset.vaultAdd = item.filename;
+    addBtn.title = `Nest ${item.label} alongside current model on Saturn 3 plate`;
+    addBtn.textContent = '+Plate';
+
+    card.append(loadBtn, addBtn);
+    listEl.append(card);
+  }
+}
+
+async function refreshVaultList() {
+  if (!caps.mcp?.isLanDirect && typeof window !== 'undefined' && window.claude) {
+    renderVaultStrip();
+    return;
+  }
+  try {
+    const r = await fetch(`${getApiBase()}/vault`, { cache: 'no-store' });
+    if (!r.ok) return;
+    const data = await r.json();
+    if (Array.isArray(data?.items)) {
+      state.vaultItems = data.items;
+      renderVaultStrip();
+    }
+  } catch {
+    renderVaultStrip();
+  }
+}
+
+async function loadVaultStl(filename, { addToPlate = false } = {}) {
+  const item = state.vaultItems.find((v) => v.filename === filename);
+  if (!item) return;
+  showError('');
+  try {
+    setBusy(true, `Streaming ${item.label} from Forge Vault...`);
+    const r = await fetch(`${getApiBase()}/vault/stl?file=${encodeURIComponent(filename)}`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const buf = await r.arrayBuffer();
+    const parsed = parseStlBuffer(buf);
+
+    if (addToPlate && state.forgeMesh) {
+      state.extraPlateMeshes.push({
+        id: newId('vx'),
+        name: item.label,
+        rawTris: parsed.tris,
+        rawVolumeMm3: parsed.volumeMm3,
+      });
+      render();
+      viewport?.fit(state.result?.bbox);
+      return;
+    }
+
+    resetMeshTransformUi();
+    state.activeVaultFile = filename;
+    renderVaultStrip();
+    state.forgeMesh = {
+      ok: true,
+      status: 'done',
+      name: slugify(item.label),
+      tris: parsed.tris,
+      rawTris: parsed.tris,
+      bbox: parsed.bbox,
+      volumeMm3: parsed.volumeMm3,
+      rawVolumeMm3: parsed.volumeMm3,
+      triangleCount: parsed.triangleCount,
+      manifold: { ok: true, errors: [] },
+      stlPath: `Vault: ${filename}`,
+      preview: { isFullMesh: true },
+      qualityMetrics: item.engine === 'blender' ? { pythonCode: '# vault-cad' } : {},
+    };
+    state.project.name = slugify(item.label).slice(0, META.name);
+    render();
+    viewport?.fit(state.result?.bbox);
+  } catch (e) {
+    showError(`Could not load Vault STL: ${e?.message || 'failed'}`);
+  } finally {
+    setBusy(false, '');
+  }
+}
+
+async function importLocalStlFiles(stlFiles) {
+  if (!stlFiles.length) return;
+  showError('');
+  try {
+    setBusy(true, `Parsing ${stlFiles.length} local STL file(s)...`);
+    for (let idx = 0; idx < stlFiles.length; idx++) {
+      const f = stlFiles[idx];
+      const buf = await f.arrayBuffer();
+      const parsed = parseStlBuffer(buf);
+      const cleanName = slugify(f.name.replace(/\.stl$/i, ''));
+      if (idx === 0 && !state.forgeMesh) {
+        resetMeshTransformUi();
+        state.activeVaultFile = '';
+        renderVaultStrip();
+        state.forgeMesh = {
+          ok: true,
+          status: 'done',
+          name: cleanName,
+          tris: parsed.tris,
+          rawTris: parsed.tris,
+          bbox: parsed.bbox,
+          volumeMm3: parsed.volumeMm3,
+          rawVolumeMm3: parsed.volumeMm3,
+          triangleCount: parsed.triangleCount,
+          manifold: { ok: true, errors: [] },
+          stlPath: `Imported: ${f.name}`,
+          preview: { isFullMesh: true },
+          qualityMetrics: {},
+        };
+        state.project.name = cleanName.slice(0, META.name);
+      } else if (idx === 0) {
+        resetMeshTransformUi();
+        state.activeVaultFile = '';
+        renderVaultStrip();
+        state.forgeMesh = {
+          ok: true,
+          status: 'done',
+          name: cleanName,
+          tris: parsed.tris,
+          rawTris: parsed.tris,
+          bbox: parsed.bbox,
+          volumeMm3: parsed.volumeMm3,
+          rawVolumeMm3: parsed.volumeMm3,
+          triangleCount: parsed.triangleCount,
+          manifold: { ok: true, errors: [] },
+          stlPath: `Imported: ${f.name}`,
+          preview: { isFullMesh: true },
+          qualityMetrics: {},
+        };
+        state.project.name = cleanName.slice(0, META.name);
+      } else {
+        state.extraPlateMeshes.push({
+          id: newId('stl'),
+          name: cleanName,
+          rawTris: parsed.tris,
+          rawVolumeMm3: parsed.volumeMm3,
+        });
+      }
+    }
+    render();
+    viewport?.fit(state.result?.bbox);
+  } catch (e) {
+    showError(`Invalid STL file: ${e?.message || 'parse failed'}`);
+  } finally {
+    setBusy(false, '');
+  }
 }
 const CAD_PRESETS = {
   star_destroyer_engines: {
@@ -4536,6 +5444,7 @@ async function pollForgeJobUntilDone(jobId, controller) {
     if (job.status === 'done') {
       const tris = unpackForgePreview(job.preview);
       resetMeshTransformUi();
+      state.activeVaultFile = job.stlFilename || '';
       state.forgeMesh = { ...job, tris, rawTris: tris, rawVolumeMm3: job.volumeMm3 };
       if (job.qualityMetrics?.pythonCode) {
         state.lastBlenderCode = job.qualityMetrics.pythonCode;
@@ -4545,6 +5454,7 @@ async function pollForgeJobUntilDone(jobId, controller) {
       saveCtl?.markChanged();
       render();
       viewport?.fit(state.result?.bbox || job.bbox);
+      refreshVaultList();
       return job;
     }
   }
@@ -5147,8 +6057,14 @@ async function exportFile(kind) {
           ? {
               ...list,
               name,
+              print: {
+                ...list.print,
+                orientation: `${state.meshTransform.tiltDeg} deg tilt, ${state.meshTransform.rotZDeg} deg Z (${state.items.length} part${state.items.length === 1 ? '' : 's'} nested)`,
+              },
               assumptions: [
-                `Generated by ShapeCast Mesh Forge (${state.forgeMesh.triangleCount} triangles)`,
+                `Generated by ShapeCast Studio v${UI_VERSION} (${state.forgeMesh.triangleCount} triangles per unit)`,
+                `Nested build-plate count: ${state.items.length} part(s)`,
+                `Peak FEP peel cross-section: ${Math.round(state.peelProfile.peakMm2)} mm^2 (${state.peelProfile.riskLevel} suction risk)`,
               ],
             }
           : list,
@@ -5356,7 +6272,16 @@ async function init() {
   });
   $('photoInput').addEventListener('change', (e) => {
     const input = /** @type {HTMLInputElement} */ (e.target);
-    addPhotos([...input.files]);
+    const all = [...input.files];
+    const stls = all.filter((f) => /\.stl$/i.test(f.name));
+    const imgs = all.filter((f) => !/\.stl$/i.test(f.name));
+    if (stls.length) importLocalStlFiles(stls);
+    if (imgs.length) addPhotos(imgs);
+    input.value = '';
+  });
+  $('stlInput')?.addEventListener('change', (e) => {
+    const input = /** @type {HTMLInputElement} */ (e.target);
+    importLocalStlFiles([...input.files]);
     input.value = '';
   });
   const well = $('dropWell');
@@ -5368,7 +6293,11 @@ async function init() {
   well.addEventListener('drop', (e) => {
     e.preventDefault();
     well.classList.remove('over');
-    addPhotos([...e.dataTransfer.files].filter((f) => f.type.startsWith('image/')));
+    const dropped = [...e.dataTransfer.files];
+    const stls = dropped.filter((f) => /\.stl$/i.test(f.name));
+    const imgs = dropped.filter((f) => f.type.startsWith('image/'));
+    if (stls.length) importLocalStlFiles(stls);
+    if (imgs.length) addPhotos(imgs);
   });
   for (const id of ['projectName', 'brief', 'scaleRef'])
     $(id).addEventListener('change', metaChange);
@@ -5555,7 +6484,7 @@ async function init() {
       );
   });
 
-  // Non-Destructive Build-Plate Orientation Deck (exports directly into STL)
+  // Non-Destructive Build-Plate Orientation & Squadron Auto-Nesting Deck (exports directly into STL)
   $('orientDeck')?.addEventListener('click', (e) => {
     const tiltBtn = /** @type {HTMLElement} */ (e.target).closest('button[data-tilt]');
     if (tiltBtn && state.forgeMesh) {
@@ -5565,7 +6494,34 @@ async function init() {
         .forEach((b) => b.classList.toggle('active', b === tiltBtn));
       render();
       viewport?.fit(state.result?.bbox);
+      return;
     }
+    const packBtn = /** @type {HTMLElement} */ (e.target).closest('button[data-pack]');
+    if (packBtn && state.forgeMesh) {
+      const val = packBtn.getAttribute('data-pack') || '1';
+      if (val === 'max') {
+        const rawTris = state.forgeMesh.rawTris || state.forgeMesh.tris;
+        const primary = transformMeshTriangles(rawTris, state.meshTransform);
+        const fit = maxCopiesOnSaturn3(primary.bbox || state.forgeMesh.bbox);
+        if (fit.rotate90 && fit.count > state.packCount) {
+          state.meshTransform.rotZDeg = (state.meshTransform.rotZDeg + 90) % 360;
+          $('rotZ90Btn')?.classList.toggle('active', state.meshTransform.rotZDeg !== 0);
+        }
+        state.packCount = fit.count;
+      } else {
+        state.packCount = Math.max(1, Number(val) || 1);
+      }
+      $('platePackRow')
+        ?.querySelectorAll('button[data-pack]')
+        .forEach((b) => b.classList.toggle('active', b === packBtn));
+      render();
+      viewport?.fit(state.result?.bbox);
+    }
+  });
+  $('clearExtraBtn')?.addEventListener('click', () => {
+    state.extraPlateMeshes = [];
+    render();
+    viewport?.fit(state.result?.bbox);
   });
   $('rotZ90Btn')?.addEventListener('click', () => {
     if (!state.forgeMesh) return;
@@ -5573,6 +6529,46 @@ async function init() {
     $('rotZ90Btn')?.classList.toggle('active', state.meshTransform.rotZDeg !== 0);
     render();
     viewport?.fit(state.result?.bbox);
+  });
+
+  // Forge Vault Ribbon interactions (1-click solo load or +Plate multi-part compose)
+  $('vaultList')?.addEventListener('click', (e) => {
+    const loadBtn = /** @type {HTMLElement} */ (e.target).closest('button[data-vault-load]');
+    if (loadBtn) {
+      loadVaultStl(loadBtn.getAttribute('data-vault-load') || '', { addToPlate: false });
+      return;
+    }
+    const addBtn = /** @type {HTMLElement} */ (e.target).closest('button[data-vault-add]');
+    if (addBtn) {
+      loadVaultStl(addBtn.getAttribute('data-vault-add') || '', { addToPlate: true });
+    }
+  });
+
+  // Interactive FEP Peel-Stress Sparkline scrubbing
+  const sparkEl = /** @type {HTMLCanvasElement | null} */ ($('peelSparkline'));
+  const scrubSpark = (clientX) => {
+    if (!sparkEl) return;
+    const rect = sparkEl.getBoundingClientRect();
+    if (!(rect.width > 0)) return;
+    const ratio = Math.max(0.01, Math.min(1, (clientX - rect.left) / rect.width));
+    const slider = /** @type {HTMLInputElement | null} */ ($('uvSliceRange'));
+    if (slider) {
+      stopUvScanAnim();
+      slider.value = String(Math.round(ratio * 1000));
+      updateUvSliceHud();
+    }
+  };
+  let sparkDown = false;
+  sparkEl?.addEventListener('pointerdown', (e) => {
+    sparkDown = true;
+    sparkEl.setPointerCapture(e.pointerId);
+    scrubSpark(e.clientX);
+  });
+  sparkEl?.addEventListener('pointermove', (e) => {
+    if (sparkDown) scrubSpark(e.clientX);
+  });
+  sparkEl?.addEventListener('pointerup', () => {
+    sparkDown = false;
   });
   $('newProjectBtn').addEventListener('click', () =>
     requestSwitch(async () => installProject(newProject())),
@@ -5633,7 +6629,8 @@ async function init() {
     if (!imageLimits && state.mode === 'blocks')
       note('Photos cannot be sent to Claude from this artifact yet; the brief alone is used.');
     else if (imageLimits)
-      /** @type {HTMLInputElement} */ ($('photoInput')).accept = imageLimits.mediaTypes.join(',');
+      /** @type {HTMLInputElement} */ ($('photoInput')).accept =
+        imageLimits.mediaTypes.join(',') + ',.stl';
     setBusy(false, '');
   } else {
     setBusy(
@@ -5666,12 +6663,16 @@ async function init() {
     }
   }
   if (caps.mcp) {
+    refreshVaultList();
     await restoreLatestForgeMeshIfAvailable();
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') {
         restoreLatestForgeMeshIfAvailable({ onlyActive: true });
+        refreshVaultList();
       }
     });
+  } else {
+    renderVaultStrip();
   }
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

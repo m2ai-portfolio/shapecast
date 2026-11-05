@@ -4,8 +4,11 @@ import {
   runMeshPrintChecks,
   estimateSaturn3Telemetry,
   transformMeshTriangles,
+  maxCopiesOnSaturn3,
+  packBuildPlate,
+  computePeelForceProfile,
 } from './printcheck.js';
-import { writeBinaryStl, concatTriangles } from './stl.js';
+import { writeBinaryStl, concatTriangles, parseStlBuffer } from './stl.js';
 import { createRequestTracker, createSaveController } from './lifecycle.js';
 import { builderPrompt, editorPrompt, criticPrompt } from './prompts.js';
 import { slugify, readmeText, truncateRequest } from './exportbundle.js';
@@ -41,6 +44,11 @@ const state = {
   forgeReady: false,
   forgeMesh: null,
   meshTransform: { tiltDeg: 0, rotZDeg: 0, targetMm: null },
+  packCount: 1,
+  extraPlateMeshes: [],
+  peelProfile: { areasMm2: new Float32Array(64), peakMm2: 0, peakRatioZ: 0, riskLevel: 'low' },
+  vaultItems: [],
+  activeVaultFile: '',
   turntable: false,
   uvScanAnim: null,
   lastBlenderCode: null,
@@ -136,6 +144,107 @@ function addChat(role, text) {
   d.scrollIntoView({ block: 'nearest' });
 }
 
+function drawPeelSparkline(ratio = 1) {
+  const cvs = /** @type {HTMLCanvasElement | null} */ ($('peelSparkline'));
+  const badge = $('peelPeakBadge');
+  if (!cvs) return;
+  const ctx = cvs.getContext('2d');
+  if (!ctx) return;
+
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const w = Math.max(180, cvs.clientWidth || 520);
+  const h = Math.max(22, cvs.clientHeight || 26);
+  if (cvs.width !== Math.round(w * dpr) || cvs.height !== Math.round(h * dpr)) {
+    cvs.width = Math.round(w * dpr);
+    cvs.height = Math.round(h * dpr);
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+
+  const { areasMm2, peakMm2, peakRatioZ, riskLevel } = state.peelProfile;
+  const bins = areasMm2.length;
+  if (!(peakMm2 > 0) || !bins) {
+    if (badge) {
+      badge.textContent = 'PEAK PEEL • —';
+      badge.style.color = 'var(--muted)';
+    }
+    return;
+  }
+
+  const maxScale = Math.max(peakMm2 * 1.12, 350);
+  const strokeColor =
+    riskLevel === 'high' ? '#f87171' : riskLevel === 'moderate' ? '#fbbf24' : '#c084fc';
+  const fillTop =
+    riskLevel === 'high'
+      ? 'rgba(248, 113, 113, 0.42)'
+      : riskLevel === 'moderate'
+        ? 'rgba(251, 191, 36, 0.36)'
+        : 'rgba(168, 85, 247, 0.42)';
+
+  const grad = ctx.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0, fillTop);
+  grad.addColorStop(1, 'rgba(168, 85, 247, 0.03)');
+
+  ctx.beginPath();
+  ctx.moveTo(0, h - 1);
+  for (let b = 0; b < bins; b++) {
+    const x = (b / (bins - 1)) * w;
+    const y = h - 2 - (areasMm2[b] / maxScale) * (h - 5);
+    ctx.lineTo(x, y);
+  }
+  ctx.lineTo(w, h - 1);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  ctx.beginPath();
+  for (let b = 0; b < bins; b++) {
+    const x = (b / (bins - 1)) * w;
+    const y = h - 2 - (areasMm2[b] / maxScale) * (h - 5);
+    if (b === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.strokeStyle = strokeColor;
+  ctx.lineWidth = 1.6;
+  ctx.stroke();
+
+  // Peak dot
+  const px = peakRatioZ * w;
+  const py = h - 2 - (peakMm2 / maxScale) * (h - 5);
+  ctx.beginPath();
+  ctx.arc(px, py, 2.5, 0, Math.PI * 2);
+  ctx.fillStyle = strokeColor;
+  ctx.fill();
+
+  // Active 405nm UV Slice Playhead
+  if (ratio < 0.999) {
+    const cx = Math.max(1, Math.min(w - 1, ratio * w));
+    ctx.beginPath();
+    ctx.moveTo(cx, 0);
+    ctx.lineTo(cx, h);
+    ctx.strokeStyle = '#e9d5ff';
+    ctx.lineWidth = 1.8;
+    ctx.stroke();
+
+    const curBin = Math.max(0, Math.min(bins - 1, Math.floor(ratio * (bins - 1))));
+    const sliceArea = Math.round(areasMm2[curBin]);
+    if (badge) {
+      badge.textContent = `SLICE ${sliceArea.toLocaleString()} mm² • PEAK ${Math.round(peakMm2).toLocaleString()} mm²`;
+      badge.style.color = 'var(--uv-bright)';
+    }
+  } else if (badge) {
+    const tag =
+      riskLevel === 'high' ? 'HIGH SUCTION' : riskLevel === 'moderate' ? 'MOD FEP' : 'LOW SUCTION';
+    badge.textContent = `PEAK ${Math.round(peakMm2).toLocaleString()} mm² • ${tag}`;
+    badge.style.color =
+      riskLevel === 'high'
+        ? 'var(--red)'
+        : riskLevel === 'moderate'
+          ? 'var(--amber)'
+          : 'var(--green)';
+  }
+}
+
 function updateUvSliceHud() {
   const slider = /** @type {HTMLInputElement | null} */ ($('uvSliceRange'));
   const readout = $('uvSliceReadout');
@@ -145,10 +254,13 @@ function updateUvSliceHud() {
   const sz = state.result?.bbox?.size?.[2] ?? 0;
   const totalLayers = sz > 0 ? Math.max(1, Math.ceil(sz / (state.layerUm / 1000))) : 0;
   viewport?.setSliceRatio(ratio, sz);
+  drawPeelSparkline(ratio);
   if (ratio >= 0.999 || totalLayers === 0) {
     bar?.classList.remove('slicing');
     readout.textContent =
-      totalLayers > 0 ? `FULL MESH • ${totalLayers.toLocaleString()} LAYERS` : 'FULL MESH • Z X-RAY READY';
+      totalLayers > 0
+        ? `FULL MESH • ${totalLayers.toLocaleString()} LAYERS`
+        : 'FULL MESH • Z X-RAY READY';
   } else {
     bar?.classList.add('slicing');
     const curLayer = Math.max(1, Math.round(ratio * totalLayers));
@@ -210,28 +322,86 @@ function render() {
     const failed = !fm.manifold?.ok;
     const rawTris = fm.rawTris || fm.tris;
     const { tris, bbox, scaleFactor } = transformMeshTriangles(rawTris, state.meshTransform);
+    const primaryBbox = bbox || fm.bbox;
     const baseVolMm3 = fm.rawVolumeMm3 ?? fm.volumeMm3 ?? 0;
-    const scaledVolMm3 = baseVolMm3 * Math.pow(scaleFactor, 3);
-    const scaledVolMl = Number((scaledVolMm3 / 1000).toFixed(2));
+    const singleVolMm3 = baseVolMm3 * Math.pow(scaleFactor, 3);
 
-    state.items = [
-      {
-        part: { id: 'forge_mesh', type: 'mesh' },
+    const maxFit = maxCopiesOnSaturn3(primaryBbox);
+    if ($('packMaxBtn')) {
+      $('packMaxBtn').textContent = `\u26A1 Max Plate (${maxFit.count}\u00D7)`;
+    }
+
+    const specs = [];
+    const copyCount = Math.max(1, state.packCount || 1);
+    for (let k = 0; k < copyCount; k++) {
+      specs.push({
+        part: { id: k === 0 ? 'forge_mesh' : `forge_mesh_${k}`, type: 'mesh' },
         tris,
-        bbox: bbox || fm.bbox,
+        bbox: primaryBbox,
         failed,
         failure: fm.manifold?.errors?.[0] ?? null,
-      },
-    ];
-    state.result = runMeshPrintChecks(bbox || fm.bbox, scaledVolMm3, !failed, {
+      });
+    }
+
+    let extraVolMm3 = 0;
+    state.extraPlateMeshes.forEach((ex, idx) => {
+      const exOriented = transformMeshTriangles(ex.rawTris, {
+        tiltDeg: state.meshTransform.tiltDeg,
+        rotZDeg: state.meshTransform.rotZDeg,
+        targetMm: null,
+      });
+      if (exOriented.bbox) {
+        extraVolMm3 += ex.rawVolumeMm3 || 0;
+        specs.push({
+          part: { id: `vault_extra_${idx}`, type: 'mesh' },
+          tris: exOriented.tris,
+          bbox: exOriented.bbox,
+          failed: false,
+          failure: null,
+        });
+      }
+    });
+
+    const packed = packBuildPlate(specs);
+    const totalVolMm3 = singleVolMm3 * copyCount + extraVolMm3;
+    const totalVolMl = Number((totalVolMm3 / 1000).toFixed(2));
+    const totalParts = packed.items.length;
+
+    state.items = packed.items;
+    state.result = runMeshPrintChecks(packed.bbox || primaryBbox, totalVolMm3, !failed, {
       layerUm: state.layerUm,
     });
-    viewport?.setItems(state.items, null);
+    state.peelProfile = computePeelForceProfile(state.items, state.result.bbox);
+    viewport?.setItems(state.items, state.selectedId);
     $('partsTableWrap')?.classList.add('hidden');
     $('orientDeck')?.classList.remove('hidden');
     if ($('orientLabel')) {
       $('orientLabel').textContent = `${state.meshTransform.tiltDeg}° tilt • ${state.meshTransform.rotZDeg}° Z`;
     }
+    if ($('packCountLabel')) {
+      $('packCountLabel').textContent =
+        totalParts === 1 ? '1 part on plate' : `${totalParts} parts nested`;
+    }
+    $('clearExtraBtn')?.classList.toggle('hidden', state.extraPlateMeshes.length === 0);
+
+    const savingsEl = $('batchSavingsBadge');
+    if (savingsEl) {
+      if (totalParts > 1 && state.result.bbox) {
+        const tel = estimateSaturn3Telemetry(state.result.bbox, totalVolMm3, {
+          layerUm: state.layerUm,
+        });
+        const minsPerPart = Math.max(1, Math.round(tel.printMinutes / totalParts));
+        const savedMins = Math.max(1, (totalParts - 1) * tel.printMinutes);
+        const sHrs = Math.floor(savedMins / 60);
+        const sRem = savedMins % 60;
+        const savedStr = sHrs > 0 ? `${sHrs}h ${String(sRem).padStart(2, '0')}m` : `${sRem}m`;
+        savingsEl.textContent = `\u26A1 ${totalParts}\u00D7 parts cured in one ${tel.printTimeLabel} Z-cycle (${minsPerPart}m/part \u2022 ${savedStr} saved vs solo runs)`;
+        savingsEl.classList.remove('hidden');
+      } else {
+        savingsEl.classList.add('hidden');
+      }
+    }
+
     const sum = $('forgeSummary');
     if (sum) {
       sum.classList.remove('hidden');
@@ -241,7 +411,7 @@ function render() {
           ? `${Number(stlTris).toLocaleString()} STL tris (${fm.triangleCount.toLocaleString()} preview)`
           : `${fm.triangleCount.toLocaleString()} tris`;
       const engineTag = fm.qualityMetrics?.pythonCode ? 'Blender 4.3 CAD' : 'Hunyuan3D 2.1';
-      sum.textContent = `${engineTag}: ${triLabel} | ${scaledVolMl} mL | AlienPC STL: ${fm.stlPath}`;
+      sum.textContent = `${engineTag} (${totalParts}\u00D7): ${triLabel} | ${totalVolMl} mL | ${fm.stlPath}`;
     }
     renderChecks(failed);
     $('assumptions').classList.add('hidden');
@@ -254,7 +424,7 @@ function render() {
       : '';
     const canExportMesh = !failed && !!caps.downloads && fm.preview?.isFullMesh !== false;
     $('exportBtn').disabled = !canExportMesh;
-    $('exportNote').textContent = fm.stlPath ? `AlienPC: ${fm.stlPath}` : '';
+    $('exportNote').textContent = fm.stlPath ? `${fm.stlPath}` : '';
     updateTelemetryCards();
     return;
   }
@@ -274,6 +444,7 @@ function render() {
     layerUm: state.layerUm,
     orientation: list.print.orientation,
   });
+  state.peelProfile = computePeelForceProfile(state.items, state.result.bbox);
   viewport?.setItems(state.items, state.selectedId);
   renderParts();
   renderChecks(anyFailed);
@@ -533,7 +704,7 @@ function addPhotos(files) {
 }
 
 // ---------- Mesh Forge & Standalone LAN Studio ----------
-const UI_VERSION = '5.0.0';
+const UI_VERSION = '6.0.0';
 const STARTER_BRIEFS = {
   isd: {
     mode: 'blender',
@@ -578,16 +749,210 @@ function stopUvScanAnim() {
 
 function resetMeshTransformUi() {
   state.meshTransform = { tiltDeg: 0, rotZDeg: 0, targetMm: null };
+  state.packCount = 1;
+  state.extraPlateMeshes = [];
   const deck = $('orientDeck');
   if (deck) {
     deck.querySelectorAll('[data-tilt]').forEach((b) => {
       b.classList.toggle('active', b.getAttribute('data-tilt') === '0');
     });
   }
+  $('platePackRow')
+    ?.querySelectorAll('[data-pack]')
+    .forEach((b) => {
+      b.classList.toggle('active', b.getAttribute('data-pack') === '1');
+    });
   $('rotZ90Btn')?.classList.remove('active');
   stopUvScanAnim();
   const slider = /** @type {HTMLInputElement | null} */ ($('uvSliceRange'));
   if (slider) slider.value = '1000';
+}
+
+function getApiBase() {
+  return window.location.pathname.startsWith('/forge') ? '/forge/api' : '/api';
+}
+
+function renderVaultStrip() {
+  const listEl = $('vaultList');
+  if (!listEl) return;
+  listEl.innerHTML = '';
+  if (!state.vaultItems.length) {
+    const empty = document.createElement('span');
+    empty.className = 'small';
+    empty.textContent = 'Generate a mesh or click + Import .STL to populate your plate.';
+    listEl.append(empty);
+    return;
+  }
+  for (const item of state.vaultItems) {
+    const card = document.createElement('div');
+    card.className = 'vault-item' + (state.activeVaultFile === item.filename ? ' active' : '');
+
+    const loadBtn = document.createElement('button');
+    loadBtn.type = 'button';
+    loadBtn.className = 'v-load';
+    loadBtn.dataset.vaultLoad = item.filename;
+    loadBtn.title = `Load ${item.label} (${item.triangles.toLocaleString()} tris) onto build plate`;
+
+    const dot = document.createElement('span');
+    dot.className = 'swatch';
+    dot.style.background = item.engine === 'blender' ? '#f59e0b' : '#a855f7';
+
+    const title = document.createElement('span');
+    title.textContent = item.label;
+
+    const meta = document.createElement('span');
+    meta.className = 'v-meta';
+    meta.textContent = `${Math.max(1, Math.round(item.triangles / 1000))}k`;
+
+    loadBtn.append(dot, title, meta);
+
+    const addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.className = 'v-add';
+    addBtn.dataset.vaultAdd = item.filename;
+    addBtn.title = `Nest ${item.label} alongside current model on Saturn 3 plate`;
+    addBtn.textContent = '+Plate';
+
+    card.append(loadBtn, addBtn);
+    listEl.append(card);
+  }
+}
+
+async function refreshVaultList() {
+  if (!caps.mcp?.isLanDirect && typeof window !== 'undefined' && window.claude) {
+    renderVaultStrip();
+    return;
+  }
+  try {
+    const r = await fetch(`${getApiBase()}/vault`, { cache: 'no-store' });
+    if (!r.ok) return;
+    const data = await r.json();
+    if (Array.isArray(data?.items)) {
+      state.vaultItems = data.items;
+      renderVaultStrip();
+    }
+  } catch {
+    renderVaultStrip();
+  }
+}
+
+async function loadVaultStl(filename, { addToPlate = false } = {}) {
+  const item = state.vaultItems.find((v) => v.filename === filename);
+  if (!item) return;
+  showError('');
+  try {
+    setBusy(true, `Streaming ${item.label} from Forge Vault...`);
+    const r = await fetch(`${getApiBase()}/vault/stl?file=${encodeURIComponent(filename)}`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const buf = await r.arrayBuffer();
+    const parsed = parseStlBuffer(buf);
+
+    if (addToPlate && state.forgeMesh) {
+      state.extraPlateMeshes.push({
+        id: newId('vx'),
+        name: item.label,
+        rawTris: parsed.tris,
+        rawVolumeMm3: parsed.volumeMm3,
+      });
+      render();
+      viewport?.fit(state.result?.bbox);
+      return;
+    }
+
+    resetMeshTransformUi();
+    state.activeVaultFile = filename;
+    renderVaultStrip();
+    state.forgeMesh = {
+      ok: true,
+      status: 'done',
+      name: slugify(item.label),
+      tris: parsed.tris,
+      rawTris: parsed.tris,
+      bbox: parsed.bbox,
+      volumeMm3: parsed.volumeMm3,
+      rawVolumeMm3: parsed.volumeMm3,
+      triangleCount: parsed.triangleCount,
+      manifold: { ok: true, errors: [] },
+      stlPath: `Vault: ${filename}`,
+      preview: { isFullMesh: true },
+      qualityMetrics: item.engine === 'blender' ? { pythonCode: '# vault-cad' } : {},
+    };
+    state.project.name = slugify(item.label).slice(0, META.name);
+    render();
+    viewport?.fit(state.result?.bbox);
+  } catch (e) {
+    showError(`Could not load Vault STL: ${e?.message || 'failed'}`);
+  } finally {
+    setBusy(false, '');
+  }
+}
+
+async function importLocalStlFiles(stlFiles) {
+  if (!stlFiles.length) return;
+  showError('');
+  try {
+    setBusy(true, `Parsing ${stlFiles.length} local STL file(s)...`);
+    for (let idx = 0; idx < stlFiles.length; idx++) {
+      const f = stlFiles[idx];
+      const buf = await f.arrayBuffer();
+      const parsed = parseStlBuffer(buf);
+      const cleanName = slugify(f.name.replace(/\.stl$/i, ''));
+      if (idx === 0 && !state.forgeMesh) {
+        resetMeshTransformUi();
+        state.activeVaultFile = '';
+        renderVaultStrip();
+        state.forgeMesh = {
+          ok: true,
+          status: 'done',
+          name: cleanName,
+          tris: parsed.tris,
+          rawTris: parsed.tris,
+          bbox: parsed.bbox,
+          volumeMm3: parsed.volumeMm3,
+          rawVolumeMm3: parsed.volumeMm3,
+          triangleCount: parsed.triangleCount,
+          manifold: { ok: true, errors: [] },
+          stlPath: `Imported: ${f.name}`,
+          preview: { isFullMesh: true },
+          qualityMetrics: {},
+        };
+        state.project.name = cleanName.slice(0, META.name);
+      } else if (idx === 0) {
+        resetMeshTransformUi();
+        state.activeVaultFile = '';
+        renderVaultStrip();
+        state.forgeMesh = {
+          ok: true,
+          status: 'done',
+          name: cleanName,
+          tris: parsed.tris,
+          rawTris: parsed.tris,
+          bbox: parsed.bbox,
+          volumeMm3: parsed.volumeMm3,
+          rawVolumeMm3: parsed.volumeMm3,
+          triangleCount: parsed.triangleCount,
+          manifold: { ok: true, errors: [] },
+          stlPath: `Imported: ${f.name}`,
+          preview: { isFullMesh: true },
+          qualityMetrics: {},
+        };
+        state.project.name = cleanName.slice(0, META.name);
+      } else {
+        state.extraPlateMeshes.push({
+          id: newId('stl'),
+          name: cleanName,
+          rawTris: parsed.tris,
+          rawVolumeMm3: parsed.volumeMm3,
+        });
+      }
+    }
+    render();
+    viewport?.fit(state.result?.bbox);
+  } catch (e) {
+    showError(`Invalid STL file: ${e?.message || 'parse failed'}`);
+  } finally {
+    setBusy(false, '');
+  }
 }
 const CAD_PRESETS = {
   star_destroyer_engines: {
@@ -909,6 +1274,7 @@ async function pollForgeJobUntilDone(jobId, controller) {
     if (job.status === 'done') {
       const tris = unpackForgePreview(job.preview);
       resetMeshTransformUi();
+      state.activeVaultFile = job.stlFilename || '';
       state.forgeMesh = { ...job, tris, rawTris: tris, rawVolumeMm3: job.volumeMm3 };
       if (job.qualityMetrics?.pythonCode) {
         state.lastBlenderCode = job.qualityMetrics.pythonCode;
@@ -918,6 +1284,7 @@ async function pollForgeJobUntilDone(jobId, controller) {
       saveCtl?.markChanged();
       render();
       viewport?.fit(state.result?.bbox || job.bbox);
+      refreshVaultList();
       return job;
     }
   }
@@ -1520,8 +1887,14 @@ async function exportFile(kind) {
           ? {
               ...list,
               name,
+              print: {
+                ...list.print,
+                orientation: `${state.meshTransform.tiltDeg} deg tilt, ${state.meshTransform.rotZDeg} deg Z (${state.items.length} part${state.items.length === 1 ? '' : 's'} nested)`,
+              },
               assumptions: [
-                `Generated by ShapeCast Mesh Forge (${state.forgeMesh.triangleCount} triangles)`,
+                `Generated by ShapeCast Studio v${UI_VERSION} (${state.forgeMesh.triangleCount} triangles per unit)`,
+                `Nested build-plate count: ${state.items.length} part(s)`,
+                `Peak FEP peel cross-section: ${Math.round(state.peelProfile.peakMm2)} mm^2 (${state.peelProfile.riskLevel} suction risk)`,
               ],
             }
           : list,
@@ -1729,7 +2102,16 @@ async function init() {
   });
   $('photoInput').addEventListener('change', (e) => {
     const input = /** @type {HTMLInputElement} */ (e.target);
-    addPhotos([...input.files]);
+    const all = [...input.files];
+    const stls = all.filter((f) => /\.stl$/i.test(f.name));
+    const imgs = all.filter((f) => !/\.stl$/i.test(f.name));
+    if (stls.length) importLocalStlFiles(stls);
+    if (imgs.length) addPhotos(imgs);
+    input.value = '';
+  });
+  $('stlInput')?.addEventListener('change', (e) => {
+    const input = /** @type {HTMLInputElement} */ (e.target);
+    importLocalStlFiles([...input.files]);
     input.value = '';
   });
   const well = $('dropWell');
@@ -1741,7 +2123,11 @@ async function init() {
   well.addEventListener('drop', (e) => {
     e.preventDefault();
     well.classList.remove('over');
-    addPhotos([...e.dataTransfer.files].filter((f) => f.type.startsWith('image/')));
+    const dropped = [...e.dataTransfer.files];
+    const stls = dropped.filter((f) => /\.stl$/i.test(f.name));
+    const imgs = dropped.filter((f) => f.type.startsWith('image/'));
+    if (stls.length) importLocalStlFiles(stls);
+    if (imgs.length) addPhotos(imgs);
   });
   for (const id of ['projectName', 'brief', 'scaleRef'])
     $(id).addEventListener('change', metaChange);
@@ -1928,7 +2314,7 @@ async function init() {
       );
   });
 
-  // Non-Destructive Build-Plate Orientation Deck (exports directly into STL)
+  // Non-Destructive Build-Plate Orientation & Squadron Auto-Nesting Deck (exports directly into STL)
   $('orientDeck')?.addEventListener('click', (e) => {
     const tiltBtn = /** @type {HTMLElement} */ (e.target).closest('button[data-tilt]');
     if (tiltBtn && state.forgeMesh) {
@@ -1938,7 +2324,34 @@ async function init() {
         .forEach((b) => b.classList.toggle('active', b === tiltBtn));
       render();
       viewport?.fit(state.result?.bbox);
+      return;
     }
+    const packBtn = /** @type {HTMLElement} */ (e.target).closest('button[data-pack]');
+    if (packBtn && state.forgeMesh) {
+      const val = packBtn.getAttribute('data-pack') || '1';
+      if (val === 'max') {
+        const rawTris = state.forgeMesh.rawTris || state.forgeMesh.tris;
+        const primary = transformMeshTriangles(rawTris, state.meshTransform);
+        const fit = maxCopiesOnSaturn3(primary.bbox || state.forgeMesh.bbox);
+        if (fit.rotate90 && fit.count > state.packCount) {
+          state.meshTransform.rotZDeg = (state.meshTransform.rotZDeg + 90) % 360;
+          $('rotZ90Btn')?.classList.toggle('active', state.meshTransform.rotZDeg !== 0);
+        }
+        state.packCount = fit.count;
+      } else {
+        state.packCount = Math.max(1, Number(val) || 1);
+      }
+      $('platePackRow')
+        ?.querySelectorAll('button[data-pack]')
+        .forEach((b) => b.classList.toggle('active', b === packBtn));
+      render();
+      viewport?.fit(state.result?.bbox);
+    }
+  });
+  $('clearExtraBtn')?.addEventListener('click', () => {
+    state.extraPlateMeshes = [];
+    render();
+    viewport?.fit(state.result?.bbox);
   });
   $('rotZ90Btn')?.addEventListener('click', () => {
     if (!state.forgeMesh) return;
@@ -1946,6 +2359,46 @@ async function init() {
     $('rotZ90Btn')?.classList.toggle('active', state.meshTransform.rotZDeg !== 0);
     render();
     viewport?.fit(state.result?.bbox);
+  });
+
+  // Forge Vault Ribbon interactions (1-click solo load or +Plate multi-part compose)
+  $('vaultList')?.addEventListener('click', (e) => {
+    const loadBtn = /** @type {HTMLElement} */ (e.target).closest('button[data-vault-load]');
+    if (loadBtn) {
+      loadVaultStl(loadBtn.getAttribute('data-vault-load') || '', { addToPlate: false });
+      return;
+    }
+    const addBtn = /** @type {HTMLElement} */ (e.target).closest('button[data-vault-add]');
+    if (addBtn) {
+      loadVaultStl(addBtn.getAttribute('data-vault-add') || '', { addToPlate: true });
+    }
+  });
+
+  // Interactive FEP Peel-Stress Sparkline scrubbing
+  const sparkEl = /** @type {HTMLCanvasElement | null} */ ($('peelSparkline'));
+  const scrubSpark = (clientX) => {
+    if (!sparkEl) return;
+    const rect = sparkEl.getBoundingClientRect();
+    if (!(rect.width > 0)) return;
+    const ratio = Math.max(0.01, Math.min(1, (clientX - rect.left) / rect.width));
+    const slider = /** @type {HTMLInputElement | null} */ ($('uvSliceRange'));
+    if (slider) {
+      stopUvScanAnim();
+      slider.value = String(Math.round(ratio * 1000));
+      updateUvSliceHud();
+    }
+  };
+  let sparkDown = false;
+  sparkEl?.addEventListener('pointerdown', (e) => {
+    sparkDown = true;
+    sparkEl.setPointerCapture(e.pointerId);
+    scrubSpark(e.clientX);
+  });
+  sparkEl?.addEventListener('pointermove', (e) => {
+    if (sparkDown) scrubSpark(e.clientX);
+  });
+  sparkEl?.addEventListener('pointerup', () => {
+    sparkDown = false;
   });
   $('newProjectBtn').addEventListener('click', () =>
     requestSwitch(async () => installProject(newProject())),
@@ -2006,7 +2459,8 @@ async function init() {
     if (!imageLimits && state.mode === 'blocks')
       note('Photos cannot be sent to Claude from this artifact yet; the brief alone is used.');
     else if (imageLimits)
-      /** @type {HTMLInputElement} */ ($('photoInput')).accept = imageLimits.mediaTypes.join(',');
+      /** @type {HTMLInputElement} */ ($('photoInput')).accept =
+        imageLimits.mediaTypes.join(',') + ',.stl';
     setBusy(false, '');
   } else {
     setBusy(
@@ -2039,12 +2493,16 @@ async function init() {
     }
   }
   if (caps.mcp) {
+    refreshVaultList();
     await restoreLatestForgeMeshIfAvailable();
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') {
         restoreLatestForgeMeshIfAvailable({ onlyActive: true });
+        refreshVaultList();
       }
     });
+  } else {
+    renderVaultStrip();
   }
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

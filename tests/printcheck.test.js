@@ -7,6 +7,9 @@ import {
   minFeature,
   estimateSaturn3Telemetry,
   transformMeshTriangles,
+  maxCopiesOnSaturn3,
+  packBuildPlate,
+  computePeelForceProfile,
 } from '../src/printcheck.js';
 
 const list = (parts) => ({
@@ -219,5 +222,33 @@ describe('print checks', () => {
     expect(tilted.scaleFactor).toBeCloseTo(1.5, 4);
     expect(tilted.bbox.min[2]).toBeCloseTo(0, 5);
     expect(tilted.bbox.size[2]).toBeGreaterThan(scaledFlat.bbox.size[2]); // tilting 30 deg increases Z height
+  });
+  it('maxCopiesOnSaturn3 and packBuildPlate nest multi-part squadrons within plate bounds', () => {
+    const unitBbox = { min: [-20, -15, 0], max: [20, 15, 25], size: [40, 30, 25] };
+    const fit = maxCopiesOnSaturn3(unitBbox);
+    expect(fit.count).toBeGreaterThanOrEqual(12);
+
+    const item = buildItems(list([box('u', [40, 30, 25], [0, 0, 12.5])]))[0];
+    const packed = packBuildPlate([item, item, item, item]);
+    expect(packed.items.length).toBe(4);
+    expect(packed.overflowCount).toBe(0);
+    expect(packed.bbox.size[0]).toBeGreaterThan(160); // 4 x 40mm + 3 x 4.5mm margins
+    expect(packed.bbox.min[2]).toBeCloseTo(0, 5);
+  });
+  it('computePeelForceProfile measures exact Green-theorem cross-section and drops peak stress on 30° tilt', () => {
+    // 40 x 100 x 10 mm flat slab -> horizontal cross-section is 4000 mm^2 at 0 deg tilt!
+    const slab = buildItems(list([box('slab', [40, 100, 10], [0, 0, 5])]))[0];
+    const flatProfile = computePeelForceProfile([slab], slab.bbox);
+    expect(flatProfile.peakMm2).toBeCloseTo(4000, 0);
+    expect(flatProfile.riskLevel).toBe('high');
+
+    // Tilt the exact same watertight slab by 30 deg -> slice width along Y drops to 10/sin(30)=20mm -> 40*20 = 800 mm^2!
+    const tilted = transformMeshTriangles(slab.tris, { tiltDeg: 30, rotZDeg: 0 });
+    const tiltedProfile = computePeelForceProfile(
+      [{ tris: tilted.tris, bbox: tilted.bbox }],
+      tilted.bbox,
+    );
+    expect(tiltedProfile.peakMm2).toBeLessThan(900);
+    expect(tiltedProfile.riskLevel).toBe('low');
   });
 });

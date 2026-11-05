@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { writeBinaryStl, readStlHeader, concatTriangles, listToTriangles } from '../src/stl.js';
+import {
+  writeBinaryStl,
+  readStlHeader,
+  concatTriangles,
+  listToTriangles,
+  parseStlBuffer,
+} from '../src/stl.js';
 import { EXAMPLE_LIST } from '../src/schema.js';
 import { partToTriangles } from '../src/geometry.js';
 
@@ -31,5 +37,22 @@ describe('stl', () => {
     expect(c.length).toBe(18);
     expect(c[9]).toBe(9);
     expect(c[17]).toBe(1);
+  });
+  it('parseStlBuffer round-trips binary STL, centers XY, grounds minZ = 0, and computes exact volume', () => {
+    // 10 x 20 x 30 mm box -> volume = 6000 mm^3
+    const tris = partToTriangles({
+      type: 'box',
+      size: [10, 20, 30],
+      pos: [15, -10, 25],
+      rot: [0, 0, 0],
+    });
+    const buf = writeBinaryStl(tris, 'test-box');
+    const parsed = parseStlBuffer(buf);
+    expect(parsed.triangleCount).toBe(12);
+    expect(parsed.bbox.min[2]).toBeCloseTo(0, 5);
+    expect(parsed.bbox.size[0]).toBeCloseTo(10, 4);
+    expect(parsed.bbox.size[1]).toBeCloseTo(20, 4);
+    expect(parsed.bbox.size[2]).toBeCloseTo(30, 4);
+    expect(parsed.volumeMm3).toBeCloseTo(6000, 1);
   });
 });

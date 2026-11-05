@@ -506,3 +506,258 @@ export function transformMeshTriangles(
   };
   return { tris: out, bbox, scaleFactor };
 }
+
+/**
+ * Compute how many copies of a given bounding box can nest onto the Elegoo Saturn 3 (12K)
+ * 218.88 x 122.88 mm build plate with support-raft clearance margins (capped at 24).
+ */
+export function maxCopiesOnSaturn3(bbox, { marginMm = 4.5, edgePadMm = 3.0 } = {}) {
+  if (!bbox || !bbox.size) return { count: 1, rotate90: false };
+  const usableW = SATURN3.build[0] - edgePadMm * 2;
+  const usableD = SATURN3.build[1] - edgePadMm * 2;
+  const [sx, sy] = bbox.size;
+  if (!(sx > 0 && sy > 0)) return { count: 1, rotate90: false };
+
+  const cols0 = Math.floor((usableW + marginMm) / (sx + marginMm));
+  const rows0 = Math.floor((usableD + marginMm) / (sy + marginMm));
+  const c0 = Math.max(0, cols0 * rows0);
+
+  const cols90 = Math.floor((usableW + marginMm) / (sy + marginMm));
+  const rows90 = Math.floor((usableD + marginMm) / (sx + marginMm));
+  const c90 = Math.max(0, cols90 * rows90);
+
+  if (c90 > c0) {
+    return { count: Math.max(1, Math.min(24, c90)), rotate90: true };
+  }
+  return { count: Math.max(1, Math.min(24, c0)), rotate90: false };
+}
+
+/**
+ * Shelf-pack multiple 3D mesh items onto the Elegoo Saturn 3 (12K) build plate,
+ * centering each shelf row and centering the overall multi-part array around (0, 0).
+ */
+export function packBuildPlate(specs, { marginMm = 4.5, edgePadMm = 3.0 } = {}) {
+  if (!specs || specs.length === 0) {
+    return { items: [], bbox: null, overflowCount: 0 };
+  }
+  if (specs.length === 1) {
+    return { items: specs, bbox: specs[0].bbox, overflowCount: 0 };
+  }
+  const usableW = SATURN3.build[0] - edgePadMm * 2;
+  const usableD = SATURN3.build[1] - edgePadMm * 2;
+
+  // Sort tallest/widest footprint first only when mixed parts are present, preserving order otherwise
+  const rows = [];
+  let curRow = { items: [], width: 0, depth: 0 };
+
+  for (const sp of specs) {
+    const [sx, sy] = sp.bbox.size;
+    const neededW = curRow.items.length === 0 ? sx : curRow.width + marginMm + sx;
+    if (curRow.items.length > 0 && neededW > usableW + 1e-6) {
+      rows.push(curRow);
+      curRow = { items: [sp], width: sx, depth: sy };
+    } else {
+      curRow.items.push(sp);
+      curRow.width = neededW;
+      if (sy > curRow.depth) curRow.depth = sy;
+    }
+  }
+  if (curRow.items.length > 0) rows.push(curRow);
+
+  const totalDepth =
+    rows.reduce((acc, r) => acc + r.depth, 0) + Math.max(0, rows.length - 1) * marginMm;
+  let cursorY = -totalDepth / 2;
+  let overflowCount = 0;
+
+  let gMinX = Infinity,
+    gMinY = Infinity,
+    gMinZ = Infinity;
+  let gMaxX = -Infinity,
+    gMaxY = -Infinity,
+    gMaxZ = -Infinity;
+
+  const placed = [];
+  for (const row of rows) {
+    let cursorX = -row.width / 2;
+    const rowCenterY = cursorY + row.depth / 2;
+    for (const sp of row.items) {
+      const [sx, sy, sz] = sp.bbox.size;
+      const cx = cursorX + sx / 2;
+      const cy = rowCenterY;
+      cursorX += sx + marginMm;
+
+      // Current sp is centered at (0,0) in X/Y; shift by (cx, cy, 0)
+      const oldCenterX = 0.5 * (sp.bbox.min[0] + sp.bbox.max[0]);
+      const oldCenterY = 0.5 * (sp.bbox.min[1] + sp.bbox.max[1]);
+      const dx = cx - oldCenterX;
+      const dy = cy - oldCenterY;
+
+      const shiftedTris = new Float32Array(sp.tris.length);
+      for (let i = 0; i < sp.tris.length; i += 3) {
+        shiftedTris[i] = sp.tris[i] + dx;
+        shiftedTris[i + 1] = sp.tris[i + 1] + dy;
+        shiftedTris[i + 2] = sp.tris[i + 2];
+      }
+      const itemBbox = {
+        min: [sp.bbox.min[0] + dx, sp.bbox.min[1] + dy, sp.bbox.min[2]],
+        max: [sp.bbox.max[0] + dx, sp.bbox.max[1] + dy, sp.bbox.max[2]],
+        size: [sx, sy, sz],
+      };
+      if (
+        Math.abs(itemBbox.min[0]) > usableW / 2 + edgePadMm + 0.05 ||
+        Math.abs(itemBbox.max[0]) > usableW / 2 + edgePadMm + 0.05 ||
+        Math.abs(itemBbox.min[1]) > usableD / 2 + edgePadMm + 0.05 ||
+        Math.abs(itemBbox.max[1]) > usableD / 2 + edgePadMm + 0.05
+      ) {
+        overflowCount++;
+      }
+      gMinX = Math.min(gMinX, itemBbox.min[0]);
+      gMinY = Math.min(gMinY, itemBbox.min[1]);
+      gMinZ = Math.min(gMinZ, itemBbox.min[2]);
+      gMaxX = Math.max(gMaxX, itemBbox.max[0]);
+      gMaxY = Math.max(gMaxY, itemBbox.max[1]);
+      gMaxZ = Math.max(gMaxZ, itemBbox.max[2]);
+
+      placed.push({
+        ...sp,
+        tris: shiftedTris,
+        bbox: itemBbox,
+      });
+    }
+    cursorY += row.depth + marginMm;
+  }
+
+  const combinedBbox = {
+    min: [gMinX, gMinY, gMinZ],
+    max: [gMaxX, gMaxY, gMaxZ],
+    size: [gMaxX - gMinX, gMaxY - gMinY, gMaxZ - gMinZ],
+  };
+  return { items: placed, bbox: combinedBbox, overflowCount };
+}
+
+/**
+ * Exact Green's-Theorem Z-layer cross-sectional curing area profiler (mm^2 vs Z)
+ * to quantify FEP suction peel stress across the Elegoo Saturn 3 UV LCD vat.
+ */
+export function computePeelForceProfile(items, bbox, { bins = 64 } = {}) {
+  const areasMm2 = new Float32Array(bins);
+  if (!items || !items.length || !bbox || !(bbox.size[2] > 0)) {
+    return { areasMm2, peakMm2: 0, peakRatioZ: 0, riskLevel: 'low' };
+  }
+  const minZ = bbox.min[2];
+  const spanZ = Math.max(0.05, bbox.size[2]);
+  const dz = spanZ / bins;
+  const flatPlateBins = new Float32Array(bins);
+
+  for (const it of items) {
+    const tris = it.tris;
+    if (!tris || !tris.length) continue;
+    for (let i = 0; i < tris.length; i += 9) {
+      const x0 = tris[i],
+        y0 = tris[i + 1],
+        z0 = tris[i + 2];
+      const x1 = tris[i + 3],
+        y1 = tris[i + 4],
+        z1 = tris[i + 5];
+      const x2 = tris[i + 6],
+        y2 = tris[i + 7],
+        z2 = tris[i + 8];
+
+      const tMinZ = Math.min(z0, z1, z2);
+      const tMaxZ = Math.max(z0, z1, z2);
+
+      // Capture coplanar horizontal islands/bases that create sudden FEP snap suction
+      if (tMaxZ - tMinZ < dz * 0.25) {
+        const ux = x1 - x0,
+          uy = y1 - y0;
+        const vx = x2 - x0,
+          vy = y2 - y0;
+        const horizArea = 0.5 * Math.abs(ux * vy - uy * vx);
+        const bIdx = Math.max(0, Math.min(bins - 1, Math.floor((tMinZ - minZ) / dz)));
+        flatPlateBins[bIdx] += horizArea;
+        continue;
+      }
+
+      const bStart = Math.max(0, Math.floor((tMinZ - minZ) / dz));
+      const bEnd = Math.min(bins - 1, Math.floor((tMaxZ - minZ) / dz));
+
+      for (let b = bStart; b <= bEnd; b++) {
+        // Offset sample plane slightly from rational midpoints to avoid exact vertex hits
+        const zb = minZ + (b + 0.50137) * dz;
+        if (zb <= tMinZ || zb >= tMaxZ) continue;
+
+        let upX = 0,
+          upY = 0,
+          downX = 0,
+          downY = 0,
+          hasUp = false,
+          hasDown = false;
+
+        // Directed edge 0 -> 1
+        if ((z0 < zb) !== (z1 < zb)) {
+          const t = (zb - z0) / (z1 - z0);
+          const px = x0 + t * (x1 - x0);
+          const py = y0 + t * (y1 - y0);
+          if (z0 < z1) {
+            upX = px;
+            upY = py;
+            hasUp = true;
+          } else {
+            downX = px;
+            downY = py;
+            hasDown = true;
+          }
+        }
+        // Directed edge 1 -> 2
+        if ((z1 < zb) !== (z2 < zb)) {
+          const t = (zb - z1) / (z2 - z1);
+          const px = x1 + t * (x2 - x1);
+          const py = y1 + t * (y2 - y1);
+          if (z1 < z2) {
+            upX = px;
+            upY = py;
+            hasUp = true;
+          } else {
+            downX = px;
+            downY = py;
+            hasDown = true;
+          }
+        }
+        // Directed edge 2 -> 0
+        if ((z2 < zb) !== (z0 < zb)) {
+          const t = (zb - z2) / (z0 - z2);
+          const px = x2 + t * (x0 - x2);
+          const py = y2 + t * (y0 - y2);
+          if (z2 < z0) {
+            upX = px;
+            upY = py;
+            hasUp = true;
+          } else {
+            downX = px;
+            downY = py;
+            hasDown = true;
+          }
+        }
+
+        if (hasUp && hasDown) {
+          areasMm2[b] += 0.5 * (downX * upY - downY * upX);
+        }
+      }
+    }
+  }
+
+  let peakMm2 = 0;
+  let peakBin = 0;
+  for (let b = 0; b < bins; b++) {
+    const val = Math.max(Math.abs(areasMm2[b]), flatPlateBins[b]);
+    areasMm2[b] = val;
+    if (val > peakMm2) {
+      peakMm2 = val;
+      peakBin = b;
+    }
+  }
+
+  const peakRatioZ = bins > 1 ? peakBin / (bins - 1) : 0;
+  const riskLevel = peakMm2 > 2200 ? 'high' : peakMm2 > 950 ? 'moderate' : 'low';
+  return { areasMm2, peakMm2, peakRatioZ, riskLevel };
+}

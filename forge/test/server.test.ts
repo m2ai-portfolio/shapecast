@@ -1,8 +1,12 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createHash } from 'node:crypto';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import { createForgeServer } from '../src/server.js';
+import { writeBinaryStl } from '../src/mesh.js';
 import { CLAUDE_CALLBACK } from '../src/oauth.js';
 
 const CLIENT = 'cid',
@@ -279,5 +283,44 @@ describe('forge server', () => {
       bytes: 11,
       sha256: createHash('sha256').update(bytes).digest('hex'),
     });
+  });
+  it('/api/vault lists binary STL artifacts, streams bytes, and blocks path traversal', async () => {
+    const vaultDir = mkdtempSync(join(tmpdir(), 'sc-vault-test-'));
+    const tri = new Float32Array([0, 0, 0, 10, 0, 0, 0, 10, 0]);
+    const stlBytes = writeBinaryStl(tri, 'vesper-sculpt');
+    writeFileSync(join(vaultDir, '2026-10-28-vesper-sculpt.stl'), Buffer.from(stlBytes));
+    const vSrv = createForgeServer({
+      publicUrl: 'https://forge.example',
+      clientId: CLIENT,
+      clientSecret: SECRET,
+      ownerPassphrase: PASS,
+      comfyUrl: 'http://127.0.0.1:9',
+      stateFile: null,
+      localOutDir: vaultDir,
+    });
+    await new Promise<void>((r) => vSrv.listen(0, '127.0.0.1', r));
+    const vBase = `http://127.0.0.1:${(vSrv.address() as AddressInfo).port}`;
+    try {
+      const listRes = await fetch(`${vBase}/api/vault`);
+      const listJson = (await listRes.json()) as any;
+      expect(listJson.ok).toBe(true);
+      expect(listJson.items.length).toBe(1);
+      expect(listJson.items[0]).toMatchObject({
+        filename: '2026-10-28-vesper-sculpt.stl',
+        label: 'Vesper Sculpt',
+        triangles: 1,
+      });
+
+      const stlRes = await fetch(`${vBase}/api/vault/stl?file=2026-10-28-vesper-sculpt.stl`);
+      expect(stlRes.status).toBe(200);
+      const gotBuf = await stlRes.arrayBuffer();
+      expect(gotBuf.byteLength).toBe(134); // 84 + 50 * 1
+
+      const badRes = await fetch(`${vBase}/api/vault/stl?file=../secret.stl`);
+      expect(badRes.status).toBe(400);
+    } finally {
+      await new Promise<void>((r) => vSrv.close(() => r()));
+      rmSync(vaultDir, { recursive: true, force: true });
+    }
   });
 });

@@ -324,14 +324,113 @@
     text-align: center;
   }
 
+  /* Live Forge Showroom Vault & Instant STL Bar */
+  #vaultBar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 6px 10px;
+    overflow: hidden;
+  }
+  .vault-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    padding-right: 8px;
+    border-right: 1px solid var(--line);
+  }
+  .vault-title {
+    font: 600 11px/1 var(--font-head);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .stl-import-pill {
+    font: 600 11px/1 var(--font-body);
+    padding: 4px 8px;
+    border-radius: 999px;
+    border: 1px dashed var(--line-bright);
+    color: var(--accent);
+    cursor: pointer;
+    white-space: nowrap;
+    margin: 0;
+    transition:
+      border-color 0.15s,
+      background 0.15s;
+  }
+  .stl-import-pill:hover {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+  }
+  #vaultList {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    overflow-x: auto;
+    flex: 1;
+    scrollbar-width: thin;
+    padding-bottom: 1px;
+  }
+  .vault-item {
+    display: inline-flex;
+    align-items: center;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    flex-shrink: 0;
+    overflow: hidden;
+    transition: border-color 0.14s;
+  }
+  .vault-item:hover,
+  .vault-item.active {
+    border-color: var(--accent);
+  }
+  .vault-item .v-load {
+    border: none;
+    background: transparent;
+    padding: 4px 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11.5px;
+    color: var(--fg);
+    border-radius: 0;
+  }
+  .vault-item .v-load:hover {
+    background: color-mix(in srgb, var(--fg) 6%, transparent);
+  }
+  .vault-item .v-meta {
+    font: 600 10px var(--font-num);
+    color: var(--muted);
+  }
+  .vault-item .v-add {
+    border: none;
+    border-left: 1px solid var(--line);
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+    color: var(--accent);
+    font: 600 10.5px var(--font-num);
+    padding: 4px 7px;
+    border-radius: 0;
+    title: 'Add to current build plate';
+  }
+  .vault-item .v-add:hover {
+    background: var(--accent);
+    color: var(--accent-ink);
+  }
+
   /* Hero Optical Viewport & Floating HUD */
   #viewWrap {
     position: relative;
     background: var(--viewport-bg);
     border: 1px solid var(--line);
     border-radius: 12px;
-    min-height: 500px;
-    height: min(76vh, 780px);
+    min-height: 480px;
+    height: min(71vh, 740px);
     overflow: hidden;
     box-shadow:
       inset 0 0 60px rgba(0, 0, 0, 0.35),
@@ -399,7 +498,7 @@
   #refPipWrap {
     position: absolute;
     left: 12px;
-    bottom: 62px;
+    bottom: 84px;
     width: 88px;
     background: var(--glass);
     backdrop-filter: blur(8px);
@@ -426,7 +525,7 @@
   #bboxReadout {
     position: absolute;
     right: 14px;
-    bottom: 62px;
+    bottom: 84px;
     font: 600 11.5px var(--font-num);
     color: var(--fg);
     background: var(--glass);
@@ -437,25 +536,50 @@
     font-variant-numeric: tabular-nums;
     z-index: 4;
   }
-  /* 405nm UV Layer X-Ray Scrubber Dock */
+  /* 405nm UV Layer X-Ray Scrubber + FEP Peel-Stress Waveform Dock */
   #uvSlicerBar {
     position: absolute;
     left: 12px;
     right: 12px;
     bottom: 10px;
     display: flex;
-    align-items: center;
-    gap: 10px;
+    flex-direction: column;
+    gap: 4px;
     background: var(--glass);
     backdrop-filter: blur(12px);
     border: 1px solid var(--line);
     border-radius: 9px;
-    padding: 6px 10px;
+    padding: 6px 10px 7px;
     z-index: 4;
   }
   #uvSlicerBar.slicing {
     border-color: var(--uv);
     box-shadow: 0 0 18px rgba(168, 85, 247, 0.28);
+  }
+  .uv-wave-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  #peelSparkline {
+    flex: 1;
+    height: 24px;
+    width: 100%;
+    display: block;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--bg) 65%, transparent);
+  }
+  #peelPeakBadge {
+    font: 600 10.5px var(--font-num);
+    color: var(--muted);
+    white-space: nowrap;
+    min-width: 175px;
+    text-align: right;
+  }
+  .uv-ctrl-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
   }
   #uvScanBtn {
     font-size: 11.5px;
@@ -485,6 +609,15 @@
   }
   #uvSlicerBar.slicing #uvSliceReadout {
     color: var(--uv-bright);
+  }
+  .batch-callout {
+    margin-top: 7px;
+    padding: 5px 8px;
+    border-radius: 6px;
+    font: 600 11px/1.35 var(--font-num);
+    background: color-mix(in srgb, var(--green) 13%, var(--bg));
+    border: 1px solid color-mix(in srgb, var(--green) 42%, var(--line));
+    color: var(--green);
   }
 
   #viewNotice {
@@ -770,12 +903,12 @@
         </select>
       </div>
       <div id="dropWell" class="well">
-        Drop reference photo / turnarounds or
+        Drop reference photo (or local <code>.stl</code>) or
         <label class="inline-label"
           ><input
             id="photoInput"
             type="file"
-            accept="image/*"
+            accept="image/*,.stl"
             capture="environment"
             multiple
             hidden
@@ -907,6 +1040,18 @@
   </section>
 
   <section class="col">
+    <div id="vaultBar">
+      <div class="vault-head">
+        <span class="vault-title">Forge Vault</span>
+        <label class="stl-import-pill" title="Import any local .stl mesh onto the Saturn 3 plate"
+          ><input id="stlInput" type="file" accept=".stl" multiple hidden />+ Import .STL</label
+        >
+      </div>
+      <div id="vaultList">
+        <span class="small">Scanning Forge Vault...</span>
+      </div>
+    </div>
+
     <div id="viewWrap">
       <canvas id="viewport"></canvas>
 
@@ -948,18 +1093,27 @@
       <div id="bboxReadout"></div>
 
       <div id="uvSlicerBar">
-        <button type="button" id="uvScanBtn" title="Animate 405nm UV curing layers bottom-to-top">
-          &#9654; 405nm UV Scan
-        </button>
-        <input
-          id="uvSliceRange"
-          type="range"
-          min="0"
-          max="1000"
-          value="1000"
-          aria-label="405nm UV Z-Layer X-Ray Slicer"
-        />
-        <span id="uvSliceReadout">FULL MESH • Z X-RAY READY</span>
+        <div class="uv-wave-row">
+          <span class="small num" style="font-size: 10.5px; white-space: nowrap; color: var(--uv-bright)"
+            >FEP PEEL WAVE</span
+          >
+          <canvas id="peelSparkline" width="520" height="26"></canvas>
+          <span id="peelPeakBadge">PEAK PEEL • &mdash;</span>
+        </div>
+        <div class="uv-ctrl-row">
+          <button type="button" id="uvScanBtn" title="Animate 405nm UV curing layers bottom-to-top">
+            &#9654; 405nm UV Scan
+          </button>
+          <input
+            id="uvSliceRange"
+            type="range"
+            min="0"
+            max="1000"
+            value="1000"
+            aria-label="405nm UV Z-Layer X-Ray Slicer"
+          />
+          <span id="uvSliceReadout">FULL MESH • Z X-RAY READY</span>
+        </div>
       </div>
 
       <div id="viewNotice" class="hidden">
@@ -1028,6 +1182,40 @@
             &#x21bb; Rotate Z 90&deg;
           </button>
         </div>
+
+        <div
+          class="row"
+          style="
+            justify-content: space-between;
+            margin-top: 10px;
+            margin-bottom: 5px;
+            padding-top: 8px;
+            border-top: 1px solid var(--line);
+          "
+        >
+          <span class="small" style="font-weight: 600; color: var(--fg)"
+            >Squadron Auto-Nesting (0s extra Z-time)</span
+          >
+          <span class="small num" id="packCountLabel">1 part on plate</span>
+        </div>
+        <div class="pill-row" id="platePackRow" style="margin-top: 0">
+          <button type="button" class="pill active" data-pack="1">1&times; Solo</button>
+          <button type="button" class="pill" data-pack="2">2&times; Pair</button>
+          <button type="button" class="pill" data-pack="4">4&times; Squad</button>
+          <button
+            type="button"
+            class="pill"
+            data-pack="max"
+            id="packMaxBtn"
+            title="Auto-pack maximum copies onto the 218.88 x 122.88 mm Saturn 3 plate"
+          >
+            &#9889; Max Plate
+          </button>
+          <button type="button" class="pill hidden" id="clearExtraBtn" title="Remove mixed Vault parts">
+            Clear +Plate
+          </button>
+        </div>
+        <div id="batchSavingsBadge" class="batch-callout hidden"></div>
       </div>
 
       <div id="checks" class="chips"></div>

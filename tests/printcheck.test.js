@@ -5,6 +5,8 @@ import {
   buildItems,
   polygonThickness,
   minFeature,
+  estimateSaturn3Telemetry,
+  transformMeshTriangles,
 } from '../src/printcheck.js';
 
 const list = (parts) => ({
@@ -183,5 +185,39 @@ describe('print checks', () => {
     expect(find(ok, 'manifold')[0].level).toBe('green');
     expect(find(ok, 'volume')[0].message).toMatch(/hollow in Chitubox/);
     expect(ok.layers[50]).toBe(800);
+  });
+  it('estimateSaturn3Telemetry computes MSLA print time, solid vs hollow resin cost, and plate area', () => {
+    const tel = estimateSaturn3Telemetry(
+      { min: [-40, -60, 0], max: [40, 60, 50], size: [80, 120, 50] },
+      120000,
+      { layerUm: 50 },
+    );
+    expect(tel.layers).toBe(1000);
+    expect(tel.printMinutes).toBeGreaterThan(60);
+    expect(tel.printTimeLabel).toMatch(/h/);
+    expect(tel.solidMl).toBeCloseTo(120, 4);
+    expect(tel.recommendHollow).toBe(true);
+    expect(tel.hollowCostUsd).toBeLessThan(tel.solidCostUsd);
+    expect(tel.platePct).toBeGreaterThan(30);
+  });
+  it('transformMeshTriangles rotates Z 90°, tilts 30°, rescales, centers XY, and grounds minZ = 0', () => {
+    // Simple triangle prism base spanning X:[0..40], Y:[0..100], Z:[5..25]
+    const raw = new Float32Array([
+      0, 0, 5, 40, 0, 5, 40, 100, 5,
+      0, 0, 25, 40, 100, 25, 0, 100, 25,
+    ]);
+    const rot90 = transformMeshTriangles(raw, { tiltDeg: 0, rotZDeg: 90, targetMm: null });
+    expect(rot90.bbox.size[0]).toBeCloseTo(100, 3);
+    expect(rot90.bbox.size[1]).toBeCloseTo(40, 3);
+    expect(rot90.bbox.min[2]).toBeCloseTo(0, 5);
+
+    const scaledFlat = transformMeshTriangles(raw, { tiltDeg: 0, rotZDeg: 0, targetMm: 150 });
+    expect(Math.max(...scaledFlat.bbox.size)).toBeCloseTo(150, 3);
+    expect(scaledFlat.scaleFactor).toBeCloseTo(1.5, 4);
+
+    const tilted = transformMeshTriangles(raw, { tiltDeg: 30, rotZDeg: 0, targetMm: 150 });
+    expect(tilted.scaleFactor).toBeCloseTo(1.5, 4);
+    expect(tilted.bbox.min[2]).toBeCloseTo(0, 5);
+    expect(tilted.bbox.size[2]).toBeGreaterThan(scaledFlat.bbox.size[2]); // tilting 30 deg increases Z height
   });
 });

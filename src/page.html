@@ -1,60 +1,63 @@
-<title>ShapeCast</title>
+<title>ShapeCast — 405nm UV Resin Pre-Flight &amp; AI 3D Studio</title>
 <style>
-  /* layout: three columns (capture | viewport | parts and print) that stack at phone width; the viewport is the hero */
+  /* Optical Darkroom Studio default + crisp Studio Light toggle */
   :root {
-    --bg: #f3f2ee;
-    --fg: #1f1f1c;
-    --muted: #6b6a64;
-    --panel: #ffffff;
-    --line: #d9d6cd;
-    --accent: #c97a12;
-    --accent-ink: #ffffff;
-    --red: #b3261e;
-    --amber: #b86e00;
-    --green: #2d7d46;
-    --info: #4a5a73;
-    --plate: #b9b5aa;
-    --grid: #8e8a80;
-    --part: #8a8f99;
-    --font-ui: 'IBM Plex Sans', system-ui, sans-serif;
+    --bg: #0b0d12;
+    --bg-elev: #121620;
+    --fg: #eef0f6;
+    --muted: #8b93a7;
+    --panel: #151924;
+    --panel-2: #1b2030;
+    --line: #262d3f;
+    --line-bright: #364059;
+    --accent: #f59e0b;
+    --accent-hover: #fbbf24;
+    --accent-ink: #0f1115;
+    --uv: #a855f7;
+    --uv-bright: #c084fc;
+    --red: #f87171;
+    --amber: #fbbf24;
+    --green: #34d399;
+    --info: #60a5fa;
+    --plate: #1e2433;
+    --grid: #3b4459;
+    --grid-major: #5c6887;
+    --part: #c2cad6;
+    --glass: rgba(16, 20, 30, 0.82);
+    --viewport-bg: radial-gradient(circle at 50% 38%, #1f2637 0%, #0d1018 74%, #080a0f 100%);
+    --font-ui: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
     --font-num: 'IBM Plex Mono', ui-monospace, monospace;
     --font-display: 'Barlow Condensed', 'Arial Narrow', sans-serif;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme='light']) {
-      --bg: #17181a;
-      --fg: #ebe9e3;
-      --muted: #9a9890;
-      --panel: #202226;
-      --line: #34373d;
-      --accent: #e0912a;
-      --accent-ink: #1a1a1a;
-      --red: #ff6b61;
-      --amber: #f0a73a;
-      --green: #5fc27d;
-      --info: #9fb4d6;
-      --plate: #3a3d44;
-      --grid: #5a5e66;
-      --part: #dcdad3;
-      color-scheme: dark;
-    }
-  }
-  :root[data-theme='dark'] {
-    --bg: #17181a;
-    --fg: #ebe9e3;
-    --muted: #9a9890;
-    --panel: #202226;
-    --line: #34373d;
-    --accent: #e0912a;
-    --accent-ink: #1a1a1a;
-    --red: #ff6b61;
-    --amber: #f0a73a;
-    --green: #5fc27d;
-    --info: #9fb4d6;
-    --plate: #3a3d44;
-    --grid: #5a5e66;
-    --part: #dcdad3;
     color-scheme: dark;
+  }
+  :root[data-theme='light'] {
+    --bg: #f1f0ec;
+    --bg-elev: #ffffff;
+    --fg: #18191c;
+    --muted: #62656f;
+    --panel: #ffffff;
+    --panel-2: #f6f5f1;
+    --line: #d6d4cc;
+    --line-bright: #bab7ac;
+    --accent: #d97706;
+    --accent-hover: #b45309;
+    --accent-ink: #ffffff;
+    --uv: #7e22ce;
+    --uv-bright: #9333ea;
+    --red: #dc2626;
+    --amber: #d97706;
+    --green: #059669;
+    --info: #2563eb;
+    --plate: #cbd0da;
+    --grid: #9ca3af;
+    --grid-major: #6b7280;
+    --part: #949ba6;
+    --glass: rgba(255, 255, 255, 0.86);
+    --viewport-bg: radial-gradient(circle at 50% 38%, #ffffff 0%, #e7e8ee 80%, #dcdfe7 100%);
+    color-scheme: light;
+  }
+  * {
+    box-sizing: border-box;
   }
   html,
   body {
@@ -64,20 +67,19 @@
     margin: 0;
     background: var(--bg);
     color: var(--fg);
-    font: 14px/1.45 var(--font-ui);
-    padding-block: 0;
-    padding-inline: 16px;
+    font: 13.5px/1.45 var(--font-ui);
+    padding: 0 16px 18px;
   }
   h1 {
     font: 600 28px/1 var(--font-display);
-    letter-spacing: 0.02em;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
     margin: 0;
-    text-wrap: balance;
   }
   h2 {
-    font: 600 13px/1.2 var(--font-ui);
+    font: 600 11.5px/1.2 var(--font-ui);
     text-transform: uppercase;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.1em;
     color: var(--muted);
     margin: 0 0 8px;
   }
@@ -86,21 +88,35 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    padding-block: 12px;
+    padding: 11px 4px;
     border-bottom: 1px solid var(--line);
     flex-wrap: wrap;
+  }
+  .brand-mark {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .uv-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent), var(--uv));
+    box-shadow: 0 0 10px rgba(168, 85, 247, 0.65);
   }
   header .sub {
     color: var(--muted);
     font-size: 12px;
+    margin-top: 2px;
   }
   main {
     display: grid;
-    grid-template-columns: 300px minmax(0, 1fr) 340px;
-    gap: 16px;
-    padding-block: 16px;
+    grid-template-columns: 325px minmax(0, 1fr) 360px;
+    gap: 14px;
+    padding-top: 14px;
+    align-items: start;
   }
-  @media (max-width: 1000px) {
+  @media (max-width: 1120px) {
     main {
       grid-template-columns: 1fr;
     }
@@ -108,20 +124,23 @@
   section.col {
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 12px;
     min-width: 0;
   }
   .card {
     background: var(--panel);
     border: 1px solid var(--line);
-    border-radius: 6px;
-    padding: 12px;
+    border-radius: 10px;
+    padding: 13px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
   }
   label {
     display: block;
-    font-size: 12px;
+    font-size: 11.5px;
+    font-weight: 600;
     color: var(--muted);
     margin-bottom: 4px;
+    letter-spacing: 0.02em;
   }
   input,
   textarea,
@@ -134,31 +153,52 @@
   textarea,
   select {
     width: 100%;
-    box-sizing: border-box;
     background: var(--bg);
     border: 1px solid var(--line);
-    border-radius: 4px;
-    padding: 6px 8px;
+    border-radius: 6px;
+    padding: 7px 9px;
+    transition: border-color 0.15s ease;
+  }
+  input[type='text']:hover,
+  textarea:hover,
+  select:hover {
+    border-color: var(--line-bright);
   }
   textarea {
-    min-height: 72px;
+    min-height: 68px;
     resize: vertical;
   }
   button {
-    background: var(--panel);
+    background: var(--panel-2);
     border: 1px solid var(--line);
-    border-radius: 4px;
+    border-radius: 6px;
     padding: 6px 10px;
     cursor: pointer;
+    font-weight: 500;
+    transition:
+      background 0.15s ease,
+      border-color 0.15s ease,
+      transform 0.08s ease;
+  }
+  button:hover:not(:disabled) {
+    border-color: var(--line-bright);
+    background: color-mix(in srgb, var(--panel-2) 82%, var(--fg));
+  }
+  button:active:not(:disabled) {
+    transform: translateY(1px);
   }
   button.primary {
-    background: var(--accent);
+    background: linear-gradient(180deg, var(--accent-hover), var(--accent));
     color: var(--accent-ink);
     border-color: var(--accent);
     font-weight: 600;
+    box-shadow: 0 2px 12px rgba(245, 158, 11, 0.25);
+  }
+  button.primary:hover:not(:disabled) {
+    filter: brightness(1.06);
   }
   button:disabled {
-    opacity: 0.5;
+    opacity: 0.45;
     cursor: default;
   }
   button:focus-visible,
@@ -174,15 +214,69 @@
     flex-wrap: wrap;
     align-items: center;
   }
+  /* Segmented Engine Switcher */
+  .seg-group {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    gap: 4px;
+    background: var(--bg);
+    padding: 4px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    margin-bottom: 10px;
+  }
+  .seg-group button {
+    border-color: transparent;
+    background: transparent;
+    padding: 6px 8px;
+    font-size: 12.5px;
+    border-radius: 5px;
+  }
+  .seg-group button.primary {
+    background: var(--accent);
+    color: var(--accent-ink);
+    box-shadow: 0 1px 6px rgba(245, 158, 11, 0.35);
+  }
+  /* Pill micro-buttons */
+  .pill-row {
+    display: flex;
+    gap: 5px;
+    flex-wrap: wrap;
+    margin-top: 5px;
+  }
+  .pill {
+    font-size: 11px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .pill:hover {
+    color: var(--fg);
+    border-color: var(--accent);
+  }
+  .pill.active {
+    background: color-mix(in srgb, var(--accent) 18%, var(--bg));
+    color: var(--accent);
+    border-color: var(--accent);
+    font-weight: 600;
+  }
   .well {
-    border: 1px dashed var(--line);
-    border-radius: 6px;
-    padding: 10px;
+    border: 1.5px dashed var(--line-bright);
+    background: color-mix(in srgb, var(--bg) 65%, var(--panel));
+    border-radius: 8px;
+    padding: 12px 10px;
     text-align: center;
     color: var(--muted);
+    transition:
+      border-color 0.15s ease,
+      background 0.15s ease;
   }
   .well.over {
     border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 10%, var(--bg));
   }
   .thumbs {
     display: flex;
@@ -195,9 +289,9 @@
     position: relative;
     width: 64px;
     height: 64px;
-    border-radius: 4px;
+    border-radius: 6px;
     overflow: hidden;
-    border: 1px solid var(--line);
+    border: 1px solid var(--line-bright);
   }
   .thumb img {
     width: 100%;
@@ -211,7 +305,10 @@
     right: 2px;
     padding: 0 5px;
     line-height: 18px;
-    font-size: 12px;
+    font-size: 11px;
+    background: rgba(0, 0, 0, 0.72);
+    color: #fff;
+    border: none;
   }
   .thumb.pending::after {
     content: 'not uploaded';
@@ -222,14 +319,19 @@
     font-size: 10px;
     text-align: center;
   }
+
+  /* Hero Optical Viewport & Floating HUD */
   #viewWrap {
     position: relative;
-    background: var(--panel);
+    background: var(--viewport-bg);
     border: 1px solid var(--line);
-    border-radius: 6px;
-    min-height: 420px;
-    height: min(70vh, 720px);
+    border-radius: 12px;
+    min-height: 500px;
+    height: min(76vh, 780px);
     overflow: hidden;
+    box-shadow:
+      inset 0 0 60px rgba(0, 0, 0, 0.35),
+      0 12px 32px rgba(0, 0, 0, 0.28);
   }
   #viewport {
     width: 100%;
@@ -237,21 +339,150 @@
     display: block;
     touch-action: none;
   }
-  .viewbar {
+  .hud-bar {
     position: absolute;
-    top: 8px;
-    left: 8px;
     display: flex;
-    gap: 6px;
+    gap: 4px;
+    align-items: center;
+    background: var(--glass);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 4px;
+    z-index: 4;
+  }
+  .hud-bar button {
+    font-size: 11.5px;
+    padding: 4px 8px;
+    border-radius: 5px;
+    background: transparent;
+    border: 1px solid transparent;
+  }
+  .hud-bar button:hover {
+    background: color-mix(in srgb, var(--fg) 8%, transparent);
+  }
+  .hud-bar button.active {
+    background: color-mix(in srgb, var(--accent) 20%, transparent);
+    color: var(--accent);
+    border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+    font-weight: 600;
+  }
+  .hud-bar button.uv-active {
+    background: color-mix(in srgb, var(--uv) 24%, transparent);
+    color: var(--uv-bright);
+    border-color: var(--uv);
+    font-weight: 600;
+  }
+  .viewbar {
+    top: 10px;
+    left: 10px;
+  }
+  .shaderbar {
+    top: 10px;
+    right: 10px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    max-width: calc(100% - 240px);
+  }
+  .swatch {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 4px;
+    vertical-align: middle;
+  }
+  #refPipWrap {
+    position: absolute;
+    left: 12px;
+    bottom: 62px;
+    width: 88px;
+    background: var(--glass);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--line-bright);
+    border-radius: 8px;
+    padding: 4px;
+    z-index: 4;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  }
+  #refPipWrap img {
+    width: 100%;
+    height: 72px;
+    object-fit: cover;
+    border-radius: 5px;
+    display: block;
+  }
+  #refPipWrap .pip-cap {
+    font: 600 9.5px/1.2 var(--font-num);
+    color: var(--muted);
+    text-align: center;
+    margin-top: 3px;
+    text-transform: uppercase;
   }
   #bboxReadout {
     position: absolute;
-    right: 10px;
-    bottom: 8px;
-    font: 12px var(--font-num);
+    right: 14px;
+    bottom: 62px;
+    font: 600 11.5px var(--font-num);
+    color: var(--fg);
+    background: var(--glass);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 3px 8px;
+    font-variant-numeric: tabular-nums;
+    z-index: 4;
+  }
+  /* 405nm UV Layer X-Ray Scrubber Dock */
+  #uvSlicerBar {
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--glass);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    padding: 6px 10px;
+    z-index: 4;
+  }
+  #uvSlicerBar.slicing {
+    border-color: var(--uv);
+    box-shadow: 0 0 18px rgba(168, 85, 247, 0.28);
+  }
+  #uvScanBtn {
+    font-size: 11.5px;
+    padding: 4px 9px;
+    white-space: nowrap;
+    border-color: color-mix(in srgb, var(--uv) 55%, var(--line));
+    color: var(--uv-bright);
+  }
+  #uvScanBtn.active {
+    background: var(--uv);
+    color: #fff;
+    border-color: var(--uv);
+  }
+  #uvSliceRange {
+    flex: 1;
+    accent-color: var(--uv);
+    cursor: pointer;
+    margin: 0;
+  }
+  #uvSliceReadout {
+    font: 600 11px var(--font-num);
     color: var(--muted);
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    min-width: 175px;
+    text-align: right;
   }
+  #uvSlicerBar.slicing #uvSliceReadout {
+    color: var(--uv-bright);
+  }
+
   #viewNotice {
     position: absolute;
     inset: 0;
@@ -262,26 +493,73 @@
     text-align: center;
   }
   #status {
-    min-height: 20px;
-    font-size: 13px;
+    min-height: 18px;
+    font-size: 12.5px;
+    color: var(--accent);
+    margin-top: 6px;
+    font-weight: 500;
+  }
+
+  /* Saturn 3 Pre-Flight Telemetry Grid */
+  .telemetry-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+    margin-bottom: 10px;
+  }
+  .t-tile {
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    padding: 7px 9px;
+  }
+  .t-tile .t-k {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
     color: var(--muted);
   }
+  .t-tile .t-v {
+    font: 600 15px/1.25 var(--font-num);
+    color: var(--fg);
+    margin-top: 2px;
+    font-variant-numeric: tabular-nums;
+  }
+  .t-tile .t-sub {
+    font-size: 10.5px;
+    color: var(--muted);
+    margin-top: 1px;
+  }
+  .orient-box {
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 8px 9px;
+    margin-bottom: 10px;
+  }
+  .export-cta {
+    width: 100%;
+    padding: 10px 14px;
+    font-size: 14px;
+    letter-spacing: 0.01em;
+  }
+
   .chat {
     display: flex;
     flex-direction: column;
     gap: 6px;
-    max-height: 260px;
+    max-height: 220px;
     overflow: auto;
   }
   .msg {
     padding: 6px 8px;
-    border-radius: 4px;
+    border-radius: 6px;
     background: var(--bg);
     border: 1px solid var(--line);
-    font-size: 13px;
+    font-size: 12.5px;
   }
   .msg.user {
-    border-color: var(--accent);
+    border-color: color-mix(in srgb, var(--accent) 65%, var(--line));
   }
   table {
     width: 100%;
@@ -310,7 +588,7 @@
     color: inherit;
   }
   tr.sel td {
-    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
   }
   .tuple {
     display: flex;
@@ -332,8 +610,9 @@
     gap: 8px;
     align-items: baseline;
     font-size: 12px;
-    padding: 4px 8px;
-    border-radius: 4px;
+    padding: 5px 8px;
+    border-radius: 6px;
+    background: var(--bg);
     border: 1px solid var(--line);
   }
   .chip::before {
@@ -347,6 +626,7 @@
   }
   .chip.red::before {
     background: var(--red);
+    box-shadow: 0 0 6px var(--red);
   }
   .chip.amber::before {
     background: var(--amber);
@@ -357,9 +637,9 @@
   .assume {
     border-left: 3px solid var(--amber);
     padding: 6px 10px;
-    font-size: 13px;
+    font-size: 12.5px;
     background: color-mix(in srgb, var(--amber) 10%, transparent);
-    border-radius: 0 4px 4px 0;
+    border-radius: 0 6px 6px 0;
   }
   .assume ul {
     margin: 4px 0 0 16px;
@@ -367,7 +647,7 @@
   }
   .banner {
     padding: 8px 10px;
-    border-radius: 4px;
+    border-radius: 6px;
     font-size: 13px;
     border: 1px solid var(--line);
     margin-top: 10px;
@@ -395,7 +675,7 @@
     overflow: auto;
   }
   .small {
-    font-size: 12px;
+    font-size: 11.5px;
     color: var(--muted);
   }
   .num {
@@ -406,6 +686,7 @@
     display: inline;
     color: var(--accent);
     cursor: pointer;
+    font-weight: 600;
   }
   .mt {
     margin-top: 10px;
@@ -413,26 +694,45 @@
 </style>
 <link
   rel="stylesheet"
-  href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600&family=IBM+Plex+Sans:wght@400;600&family=IBM+Plex+Mono&display=swap"
+  href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap"
 />
 <header>
   <div>
-    <div class="row" style="gap: 8px; align-items: baseline">
-      <h1>ShapeCast</h1>
+    <div class="row" style="gap: 9px; align-items: center">
+      <span class="brand-mark"><span class="uv-dot"></span><h1>ShapeCast</h1></span>
       <span
         id="versionBadge"
         class="small num"
-        style="padding: 1px 6px; border: 1px solid var(--line); border-radius: 4px"
-        >UI v4.0</span
+        style="
+          padding: 2px 7px;
+          border: 1px solid var(--line);
+          border-radius: 999px;
+          background: var(--panel);
+        "
+        >UI v5.0</span
+      >
+      <span
+        class="small num"
+        style="
+          padding: 2px 7px;
+          border: 1px solid color-mix(in srgb, var(--uv) 45%, var(--line));
+          border-radius: 999px;
+          color: var(--uv-bright);
+        "
+        >405nm MSLA • SATURN 3 12K</span
       >
     </div>
-    <div class="sub">Photo, sketch or prompt to a Saturn 3 resin print</div>
+    <div class="sub">
+      Photo, sketch, or CAD brief &rarr; watertight 12K photopolymer resin print with live UV layer
+      X-ray
+    </div>
   </div>
   <div class="row">
     <select id="projectSelect" aria-label="Project" style="width: auto">
       <option value="">New project</option>
     </select>
     <button id="newProjectBtn">New</button>
+    <button id="themeBtn" title="Switch Darkroom / Daylight Studio">☀ Light</button>
     <span id="saveState" class="small">local only</span>
   </div>
 </header>
@@ -451,16 +751,14 @@
 <main>
   <section class="col">
     <div class="card">
-      <div class="row" style="justify-content: space-between; margin-bottom: 6px">
-        <h2 style="margin: 0">Capture</h2>
-        <span id="forgeBadge" class="small"></span>
+      <div class="row" style="justify-content: space-between; margin-bottom: 8px">
+        <h2 style="margin: 0">1. Capture &amp; Engine</h2>
+        <span id="forgeBadge" class="small num"></span>
       </div>
-      <div class="row" style="gap: 6px; margin-bottom: 8px">
-        <button id="modeBtnForge" class="primary" style="flex: 1; padding: 6px 8px">
-          Hunyuan3D
-        </button>
-        <button id="modeBtnBlender" style="flex: 1; padding: 6px 8px">Blender 3D</button>
-        <button id="modeBtnBlocks" style="padding: 6px 8px">Blocks</button>
+      <div class="seg-group">
+        <button id="modeBtnForge" class="primary">Hunyuan3D Sculpt</button>
+        <button id="modeBtnBlender">Blender 3D CAD</button>
+        <button id="modeBtnBlocks">Blocks</button>
         <select id="modeSelect" class="hidden" aria-label="Engine">
           <option value="forge">Mesh Forge (Hunyuan3D + Blender)</option>
           <option value="blender">Blender 3D (Claude bpy -> AlienPC)</option>
@@ -468,7 +766,7 @@
         </select>
       </div>
       <div id="dropWell" class="well">
-        Drop photos here or
+        Drop reference photo / turnarounds or
         <label class="inline-label"
           ><input
             id="photoInput"
@@ -477,24 +775,38 @@
             capture="environment"
             multiple
             hidden
-          />take / choose a photo</label
+          />browse image</label
         >
-        <div id="photoNote" class="small"></div>
+        <div id="photoNote" class="small" style="margin-top: 4px"></div>
         <div id="thumbs" class="thumbs"></div>
       </div>
-      <label for="scaleRef" class="mt">Scale reference</label>
+
+      <label for="scaleRef" class="mt">Target Scale (longest side)</label>
       <input
         id="scaleRef"
         type="text"
         maxlength="300"
         placeholder="120 mm longest side (or coin is 24.26 mm)"
       />
-      <label for="brief" class="mt">Brief</label>
+      <div class="pill-row" id="quickScaleRow">
+        <button type="button" class="pill" data-scale-mm="32">32mm Mini</button>
+        <button type="button" class="pill" data-scale-mm="75">75mm Bust</button>
+        <button type="button" class="pill active" data-scale-mm="120">120mm Prop</button>
+        <button type="button" class="pill" data-scale-mm="180">180mm Centerpiece</button>
+      </div>
+
+      <label for="brief" class="mt">Design Brief</label>
       <textarea
         id="brief"
         maxlength="4000"
-        placeholder="a 1970 chevy chevelle miniature car, or a stand for my phone"
+        placeholder="Describe your sculpt or mechanical part — or leave blank to reconstruct from photo..."
       ></textarea>
+      <div class="pill-row" id="starterPromptRow">
+        <button type="button" class="pill" data-starter="isd">✦ ISD Engine Array</button>
+        <button type="button" class="pill" data-starter="turret">✦ Quad Turbolaser</button>
+        <button type="button" class="pill" data-starter="mecha">✦ Mecha Bust</button>
+      </div>
+
       <div
         id="studioPrepWrap"
         class="row mt small"
@@ -504,7 +816,7 @@
         <select
           id="studioPrepSelect"
           aria-label="Step 0 Studio Prep"
-          style="width: auto; padding: 3px 6px; font-size: 12px"
+          style="width: auto; padding: 4px 6px; font-size: 12px"
         >
           <option value="auto" selected>Auto (Gemini 3.1/3-Pro &rarr; GPT-Image-2.5)</option>
           <option value="off">Raw Photo (Prepped in Google Flow / Whisk)</option>
@@ -522,9 +834,11 @@
           <select
             id="cadProviderSelect"
             aria-label="CAD OAuth Model"
-            style="width: auto; padding: 3px 6px; font-size: 12px"
+            style="width: auto; padding: 4px 6px; font-size: 12px"
           >
-            <option value="auto" selected>Auto (Opus 5.5 OAuth &rarr; GPT-6.1-Sol OAuth &rarr; Gemini 4)</option>
+            <option value="auto" selected>
+              Auto (Opus 5.5 OAuth &rarr; GPT-6.1-Sol OAuth &rarr; Gemini 4)
+            </option>
             <option value="claude">Claude Opus 5.5 (OAuth Subscription)</option>
             <option value="codex">ChatGPT GPT-6.1-Sol (OAuth Subscription)</option>
             <option value="gemini">Google Gemini 4 (gemini-4-argon)</option>
@@ -538,7 +852,7 @@
           <select
             id="cadPresetSelect"
             aria-label="CAD Sub-Assembly Preset"
-            style="width: auto; padding: 3px 6px; font-size: 12px"
+            style="width: auto; padding: 4px 6px; font-size: 12px"
           >
             <option value="">Custom Brief / Photo</option>
             <option value="star_destroyer_engines">Star Destroyer Rear Engine Baffle</option>
@@ -550,57 +864,183 @@
       </div>
       <label
         class="row mt small"
-        style="gap: 6px; cursor: pointer; color: var(--fg); align-items: center"
+        style="gap: 6px; cursor: pointer; color: var(--fg); align-items: center; font-weight: 400"
       >
         <input id="autoRefineCheck" type="checkbox" style="width: auto; margin: 0" />
         Auto-refine with Critic Agent (&gt;= 85% quality)
       </label>
       <div class="row mt">
-        <button id="buildBtn" class="primary">Generate mesh</button
-        ><button id="refineBtn" title="Run Claude Critic Agent to inspect & refine the 3D mesh">
+        <button id="buildBtn" class="primary" style="flex: 1; padding: 9px 12px">
+          Generate mesh</button
+        ><button id="refineBtn" title="Run Critic Agent to inspect & refine the 3D mesh">
           Review &amp; Refine</button
         ><button id="stopBtn" class="hidden">Stop</button>
       </div>
       <div id="status"></div>
       <div id="criticStatus" class="small" style="margin-top: 4px"></div>
     </div>
+
     <div class="card">
-      <h2>Revise with Claude</h2>
+      <h2>Iterative AI Co-Pilot</h2>
       <div id="chatLog" class="chat"></div>
       <div class="row mt">
         <input
           id="chatInput"
           type="text"
           maxlength="2000"
-          placeholder="make the slot 2 mm wider"
+          placeholder="e.g. deepen panel seams 0.6 mm, widen base..."
           style="flex: 1"
-        /><button id="sendBtn">Send</button>
+        /><button id="sendBtn">Revise</button>
       </div>
       <div id="staleCard" class="banner warn hidden">
         <span id="staleText"></span>
         <span class="row mt"
-          ><button id="staleApply">Apply anyway</button
+          ><button id="staleApply" class="primary">Apply anyway</button
           ><button id="staleDiscard">Discard</button></span
         >
       </div>
     </div>
   </section>
+
   <section class="col">
     <div id="viewWrap">
       <canvas id="viewport"></canvas>
-      <div class="viewbar">
-        <button id="fitBtn">Fit</button><button id="isoBtn">Iso</button
-        ><button id="topBtn">Top</button><button id="frontBtn">Front</button>
+
+      <div class="hud-bar viewbar">
+        <button id="fitBtn" title="Fit model in frame">Fit</button>
+        <button id="isoBtn" title="3/4 Isometric view">Iso</button>
+        <button id="topBtn" title="Top build-plate view">Top</button>
+        <button id="frontBtn" title="Front elevation view">Front</button>
+        <button id="spinBtn" title="Showroom turntable rotation">&#x21bb; Spin</button>
       </div>
+
+      <div class="hud-bar shaderbar" id="shaderBar">
+        <button type="button" class="active" data-shader="clay" title="Sculptor Crevice AO Clay">
+          <span class="swatch" style="background: #b4bcc8"></span>Clay
+        </button>
+        <button type="button" data-shader="aqua8k" title="Elegoo 8K Space-Aqua Photopolymer">
+          <span class="swatch" style="background: #5d8aa8"></span>8K Resin
+        </button>
+        <button type="button" data-shader="emerald" title="Translucent Emerald UV Resin">
+          <span class="swatch" style="background: #10b981"></span>Emerald UV
+        </button>
+        <button type="button" data-shader="obsidian" title="Engineering Matte Obsidian Tough">
+          <span class="swatch" style="background: #374151; border: 1px solid #9ca3af"></span>Obsidian
+        </button>
+        <button
+          type="button"
+          data-shader="overhang"
+          title="Highlight <45° downward overhangs needing Chitubox supports"
+        >
+          <span class="swatch" style="background: #ef4444"></span>Support Radar
+        </button>
+      </div>
+
+      <div id="refPipWrap" class="hidden">
+        <img id="refPipImg" alt="Reference" />
+        <div class="pip-cap">Ref Photo</div>
+      </div>
+
       <div id="bboxReadout"></div>
+
+      <div id="uvSlicerBar">
+        <button type="button" id="uvScanBtn" title="Animate 405nm UV curing layers bottom-to-top">
+          &#9654; 405nm UV Scan
+        </button>
+        <input
+          id="uvSliceRange"
+          type="range"
+          min="0"
+          max="1000"
+          value="1000"
+          aria-label="405nm UV Z-Layer X-Ray Slicer"
+        />
+        <span id="uvSliceReadout">FULL MESH • Z X-RAY READY</span>
+      </div>
+
       <div id="viewNotice" class="hidden">
         3D preview unavailable in this browser. The parts table and export still work.
       </div>
     </div>
   </section>
+
   <section class="col">
     <div class="card">
-      <h2>Parts / Mesh</h2>
+      <div class="row" style="justify-content: space-between; margin-bottom: 8px">
+        <h2 style="margin: 0">2. Saturn 3 Pre-Flight Deck</h2>
+        <div class="row" style="gap: 5px">
+          <label for="layerSelect" style="margin: 0; font-weight: 500">Slice</label>
+          <select id="layerSelect" style="width: auto; padding: 3px 6px; font-size: 12px">
+            <option value="10">10 &micro;m Ultra</option>
+            <option value="30">30 &micro;m Fine</option>
+            <option value="50" selected>50 &micro;m Std</option>
+            <option value="100">100 &micro;m Draft</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="telemetry-grid" id="telemetryGrid">
+        <div class="t-tile">
+          <div class="t-k">Est. Print Time</div>
+          <div class="t-v" id="telTime">&mdash;</div>
+          <div class="t-sub" id="telTimeSub">Elegoo Saturn 3 12K</div>
+        </div>
+        <div class="t-tile">
+          <div class="t-k">Resin Cost &amp; Mass</div>
+          <div class="t-v" id="telCost">&mdash;</div>
+          <div class="t-sub" id="telCostSub">8K Photopolymer</div>
+        </div>
+        <div class="t-tile">
+          <div class="t-k">405nm UV Layers</div>
+          <div class="t-v" id="telLayers">&mdash;</div>
+          <div class="t-sub" id="telLayersSub">19 &times; 24 &micro;m XY</div>
+        </div>
+        <div class="t-tile">
+          <div class="t-k">Support Overhangs</div>
+          <div class="t-v" id="telOverhang">&mdash;</div>
+          <div class="t-sub" id="telOverhangSub">&lt;45&deg; surface area</div>
+        </div>
+      </div>
+
+      <div id="orientDeck" class="orient-box hidden">
+        <div class="row" style="justify-content: space-between; margin-bottom: 5px">
+          <span class="small" style="font-weight: 600; color: var(--fg)"
+            >Live Build-Plate Orientation (exports to STL)</span
+          >
+          <span class="small num" id="orientLabel">0&deg; tilt • 0&deg; Z</span>
+        </div>
+        <div class="pill-row" style="margin-top: 0">
+          <button type="button" class="pill active" data-tilt="0">Flat 0&deg;</button>
+          <button
+            type="button"
+            class="pill"
+            data-tilt="30"
+            title="Recommended MSLA resin tilt to cut peel suction force"
+          >
+            Resin Tilt 30&deg;
+          </button>
+          <button type="button" class="pill" data-tilt="45">Steep 45&deg;</button>
+          <button type="button" class="pill" id="rotZ90Btn" title="Rotate 90° around Z to fit wide parts">
+            &#x21bb; Rotate Z 90&deg;
+          </button>
+        </div>
+      </div>
+
+      <div id="checks" class="chips"></div>
+
+      <div class="mt">
+        <button id="exportBtn" class="primary export-cta">
+          &#x2B07; Export Saturn 3 Print Pack (.zip STL)
+        </button>
+        <div class="row mt" style="justify-content: space-between">
+          <button id="exportJsonBtn" style="font-size: 12px; padding: 4px 8px">Export JSON</button>
+          <span id="exportNote" class="small"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>3. Active Model &amp; Geometry</h2>
       <div class="row" style="margin-bottom: 8px">
         <label for="projectName" style="margin: 0">Name</label
         ><input id="projectName" type="text" maxlength="80" style="flex: 1" />
@@ -621,26 +1061,9 @@
       </div>
     </div>
     <div id="assumptions" class="assume hidden"></div>
-    <div class="card">
-      <h2>Print check <span class="small">Saturn 3</span></h2>
-      <div class="row" style="margin-bottom: 8px">
-        <label for="layerSelect" style="margin: 0">Layer</label
-        ><select id="layerSelect" style="width: auto">
-          <option value="10">10 um</option>
-          <option value="30">30 um</option>
-          <option value="50" selected>50 um</option>
-          <option value="100">100 um</option>
-        </select>
-      </div>
-      <div id="checks" class="chips"></div>
-      <div class="row mt">
-        <button id="exportBtn" class="primary">Export .zip (STL)</button
-        ><button id="exportJsonBtn">Export JSON</button>
-      </div>
-      <div id="exportNote" class="small"></div>
-    </div>
+
     <details class="card">
-      <summary>Raw reply / debug</summary>
+      <summary>Raw telemetry / debug JSON</summary>
       <pre id="rawReply"></pre>
     </details>
   </section>

@@ -1,5 +1,10 @@
 import { validatePartList } from './schema.js';
-import { runPrintChecks, runMeshPrintChecks } from './printcheck.js';
+import {
+  runPrintChecks,
+  runMeshPrintChecks,
+  estimateSaturn3Telemetry,
+  transformMeshTriangles,
+} from './printcheck.js';
 import { writeBinaryStl, concatTriangles } from './stl.js';
 import { createRequestTracker, createSaveController } from './lifecycle.js';
 import { builderPrompt, editorPrompt, criticPrompt } from './prompts.js';
@@ -35,6 +40,9 @@ const state = {
   mode: 'forge',
   forgeReady: false,
   forgeMesh: null,
+  meshTransform: { tiltDeg: 0, rotZDeg: 0, targetMm: null },
+  turntable: false,
+  uvScanAnim: null,
   lastBlenderCode: null,
   project: null,
   unsavedRevisions: [],
@@ -113,7 +121,7 @@ function setMode(nextMode) {
     note('Organic/Sculpt track: Step 0 Studio Prep -> Hunyuan3D 2.1 (512 octree) -> AlienPC STL.');
   } else if (state.mode === 'blender') {
     note(
-      'Hard-Surface CAD track: OAuth Sonnet 5.5 / GPT-6.1-Sol writes exact Blender 4.3 bpy CAD (zero voxel remeshing).',
+      'Hard-Surface CAD track: OAuth Opus 5.5 / GPT-6.1-Sol writes exact Blender 4.3 bpy CAD (zero voxel remeshing).',
     );
   } else if (!imageLimits) {
     note('Parametric Blocks track.');
@@ -128,23 +136,102 @@ function addChat(role, text) {
   d.scrollIntoView({ block: 'nearest' });
 }
 
+function updateUvSliceHud() {
+  const slider = /** @type {HTMLInputElement | null} */ ($('uvSliceRange'));
+  const readout = $('uvSliceReadout');
+  const bar = $('uvSlicerBar');
+  if (!slider || !readout) return;
+  const ratio = Number(slider.value) / 1000;
+  const sz = state.result?.bbox?.size?.[2] ?? 0;
+  const totalLayers = sz > 0 ? Math.max(1, Math.ceil(sz / (state.layerUm / 1000))) : 0;
+  viewport?.setSliceRatio(ratio, sz);
+  if (ratio >= 0.999 || totalLayers === 0) {
+    bar?.classList.remove('slicing');
+    readout.textContent =
+      totalLayers > 0 ? `FULL MESH • ${totalLayers.toLocaleString()} LAYERS` : 'FULL MESH • Z X-RAY READY';
+  } else {
+    bar?.classList.add('slicing');
+    const curLayer = Math.max(1, Math.round(ratio * totalLayers));
+    const curZ = (ratio * sz).toFixed(1);
+    readout.textContent = `405nm X-RAY • L${curLayer}/${totalLayers} (${curZ} mm)`;
+  }
+}
+
+function updateTelemetryCards() {
+  const tel = estimateSaturn3Telemetry(state.result?.bbox, state.result?.volumeMm3 ?? 0, {
+    layerUm: state.layerUm,
+  });
+  const ov = viewport?.getOverhangStats?.() ?? { overhangPct: 0, overhangMm2: 0 };
+  if ($('telTime')) $('telTime').textContent = tel.printTimeLabel;
+  if ($('telTimeSub'))
+    $('telTimeSub').textContent =
+      tel.platePct > 0 ? `${tel.platePct.toFixed(1)}% of Saturn 3 plate` : 'Elegoo Saturn 3 12K';
+  if ($('telCost')) {
+    $('telCost').textContent =
+      tel.solidMl > 0
+        ? tel.recommendHollow
+          ? `$${tel.hollowCostUsd.toFixed(2)}`
+          : `$${tel.solidCostUsd.toFixed(2)}`
+        : '—';
+  }
+  if ($('telCostSub')) {
+    $('telCostSub').textContent =
+      tel.solidMl > 0
+        ? tel.recommendHollow
+          ? `${Math.round(tel.hollowGrams)}g hollow ($${tel.solidCostUsd.toFixed(2)} solid)`
+          : `${Math.round(tel.solidGrams)}g (${tel.solidMl.toFixed(1)} mL)`
+        : '8K Photopolymer';
+  }
+  if ($('telLayers'))
+    $('telLayers').textContent = tel.layers > 0 ? tel.layers.toLocaleString() : '—';
+  if ($('telLayersSub'))
+    $('telLayersSub').textContent = `${state.layerUm} µm Z • 19×24 µm XY`;
+  if ($('telOverhang')) {
+    $('telOverhang').textContent =
+      state.result?.bbox ? `${ov.overhangPct.toFixed(1)}%` : '—';
+    $('telOverhang').style.color =
+      ov.overhangPct > 18 ? 'var(--amber)' : ov.overhangPct > 0 ? 'var(--fg)' : 'var(--green)';
+  }
+  if ($('telOverhangSub')) {
+    $('telOverhangSub').textContent =
+      ov.overhangPct > 18
+        ? 'Add medium supports in Chitubox'
+        : ov.overhangPct > 2
+          ? 'Light tree supports advised'
+          : 'Minimal overhang stress';
+  }
+  updateUvSliceHud();
+}
+
 // ---------- render ----------
 function render() {
   if (state.forgeMesh) {
     const fm = state.forgeMesh;
     const failed = !fm.manifold?.ok;
+    const rawTris = fm.rawTris || fm.tris;
+    const { tris, bbox, scaleFactor } = transformMeshTriangles(rawTris, state.meshTransform);
+    const baseVolMm3 = fm.rawVolumeMm3 ?? fm.volumeMm3 ?? 0;
+    const scaledVolMm3 = baseVolMm3 * Math.pow(scaleFactor, 3);
+    const scaledVolMl = Number((scaledVolMm3 / 1000).toFixed(2));
+
     state.items = [
       {
         part: { id: 'forge_mesh', type: 'mesh' },
-        tris: fm.tris,
-        bbox: fm.bbox,
+        tris,
+        bbox: bbox || fm.bbox,
         failed,
         failure: fm.manifold?.errors?.[0] ?? null,
       },
     ];
-    state.result = runMeshPrintChecks(fm.bbox, fm.volumeMm3, !failed, { layerUm: state.layerUm });
+    state.result = runMeshPrintChecks(bbox || fm.bbox, scaledVolMm3, !failed, {
+      layerUm: state.layerUm,
+    });
     viewport?.setItems(state.items, null);
     $('partsTableWrap')?.classList.add('hidden');
+    $('orientDeck')?.classList.remove('hidden');
+    if ($('orientLabel')) {
+      $('orientLabel').textContent = `${state.meshTransform.tiltDeg}° tilt • ${state.meshTransform.rotZDeg}° Z`;
+    }
     const sum = $('forgeSummary');
     if (sum) {
       sum.classList.remove('hidden');
@@ -153,7 +240,8 @@ function render() {
         stlTris && stlTris > fm.triangleCount
           ? `${Number(stlTris).toLocaleString()} STL tris (${fm.triangleCount.toLocaleString()} preview)`
           : `${fm.triangleCount.toLocaleString()} tris`;
-      sum.textContent = `Hunyuan3D mesh: ${triLabel} | ${fm.volumeMl} mL | AlienPC STL: ${fm.stlPath}`;
+      const engineTag = fm.qualityMetrics?.pythonCode ? 'Blender 4.3 CAD' : 'Hunyuan3D 2.1';
+      sum.textContent = `${engineTag}: ${triLabel} | ${scaledVolMl} mL | AlienPC STL: ${fm.stlPath}`;
     }
     renderChecks(failed);
     $('assumptions').classList.add('hidden');
@@ -166,10 +254,12 @@ function render() {
       : '';
     const canExportMesh = !failed && !!caps.downloads && fm.preview?.isFullMesh !== false;
     $('exportBtn').disabled = !canExportMesh;
-    $('exportNote').textContent = fm.stlPath ? `Saved on AlienPC: ${fm.stlPath}` : '';
+    $('exportNote').textContent = fm.stlPath ? `AlienPC: ${fm.stlPath}` : '';
+    updateTelemetryCards();
     return;
   }
 
+  $('orientDeck')?.classList.add('hidden');
   $('partsTableWrap')?.classList.remove('hidden');
   $('forgeSummary')?.classList.add('hidden');
   const list = state.project.current;
@@ -198,6 +288,7 @@ function render() {
   $('exportBtn').disabled = anyFailed || !caps.downloads;
   if (anyFailed)
     $('exportNote').textContent = 'Export is disabled until every part passes the geometry check.';
+  updateTelemetryCards();
 }
 
 function renderParts() {
@@ -344,6 +435,18 @@ function renderThumbs() {
     d.append(img, b);
     t.append(d);
   }
+  const pipWrap = $('refPipWrap');
+  const pipImg = /** @type {HTMLImageElement | null} */ ($('refPipImg'));
+  const firstPh = state.project.photos[0];
+  if (pipWrap && pipImg) {
+    if (firstPh) {
+      pipImg.src = firstPh.url || '/_blob/' + firstPh.assetId;
+      pipWrap.classList.remove('hidden');
+    } else {
+      pipImg.removeAttribute('src');
+      pipWrap.classList.add('hidden');
+    }
+  }
 }
 
 // ---------- model changes ----------
@@ -430,7 +533,62 @@ function addPhotos(files) {
 }
 
 // ---------- Mesh Forge & Standalone LAN Studio ----------
-const UI_VERSION = '4.0.4';
+const UI_VERSION = '5.0.0';
+const STARTER_BRIEFS = {
+  isd: {
+    mode: 'blender',
+    presetKey: 'star_destroyer_engines',
+    scaleMm: 120,
+    name: 'stardestroyer-engines-cad',
+    scaleRef: '120 mm longest side',
+    brief:
+      'Imperial Star Destroyer rear diamond-wedge engine baffle plate (120 mm wide x 32 mm tall) with raised perimeter armor bevel frame, 3 large concentric 64-segment heavy ion thrusters with 28 radial internal turbine cooling vanes, 4 secondary thrusters on stepped mounting plates with micro-capacitor greeble blocks, radial structural struts around the center thruster, and 7-slat wingtip cooling louver arrays on both sides.',
+  },
+  turret: {
+    mode: 'blender',
+    presetKey: 'scifi_turret_battery',
+    scaleMm: 85,
+    name: 'quad-turbolaser-turret-cad',
+    scaleRef: '85 mm longest side',
+    brief:
+      'Heavy sci-fi quad-barrel turbolaser turret battery on an octagonal armored rotating base with perimeter bolt flanges, twin elevated trunnion recoil housings, 4 concentric 64-segment stepped rifle barrels with muzzle flash suppressors and cooling jackets, top rangefinder optics pod, and rear heat-sink louver slats.',
+  },
+  mecha: {
+    mode: 'forge',
+    presetKey: '',
+    scaleMm: 75,
+    name: 'cyber-ronin-collectible-bust',
+    scaleRef: '75 mm longest side',
+    brief:
+      'Collectible 75mm resin display bust of an armored cybernetic Ronin warrior on a beveled octagonal plinth pedestal, layered horned kabuto helmet with crisp mechanical visor slit, braided throat guard collar plates, high-relief shoulder pauldrons, watertight solid forms suitable for 12K MSLA photopolymer printing.',
+  },
+};
+
+function stopUvScanAnim() {
+  if (state.uvScanAnim) {
+    cancelAnimationFrame(state.uvScanAnim);
+    state.uvScanAnim = null;
+  }
+  const btn = $('uvScanBtn');
+  if (btn) {
+    btn.classList.remove('active');
+    btn.textContent = '\u25B6 405nm UV Scan';
+  }
+}
+
+function resetMeshTransformUi() {
+  state.meshTransform = { tiltDeg: 0, rotZDeg: 0, targetMm: null };
+  const deck = $('orientDeck');
+  if (deck) {
+    deck.querySelectorAll('[data-tilt]').forEach((b) => {
+      b.classList.toggle('active', b.getAttribute('data-tilt') === '0');
+    });
+  }
+  $('rotZ90Btn')?.classList.remove('active');
+  stopUvScanAnim();
+  const slider = /** @type {HTMLInputElement | null} */ ($('uvSliceRange'));
+  if (slider) slider.value = '1000';
+}
 const CAD_PRESETS = {
   star_destroyer_engines: {
     name: 'stardestroyer-engines-cad',
@@ -695,13 +853,14 @@ async function restoreLatestForgeMeshIfAvailable({ onlyActive = false } = {}) {
     const job = res?.payload;
     if (job?.ok && job?.status === 'done' && job?.preview) {
       const tris = unpackForgePreview(job.preview);
-      state.forgeMesh = { ...job, tris };
+      resetMeshTransformUi();
+      state.forgeMesh = { ...job, tris, rawTris: tris, rawVolumeMm3: job.volumeMm3 };
       if (job.qualityMetrics?.pythonCode) {
         state.lastBlenderCode = job.qualityMetrics.pythonCode;
       }
       if (job.name) state.project.name = String(job.name).slice(0, META.name);
       render();
-      viewport?.fit(job.bbox);
+      viewport?.fit(state.result?.bbox || job.bbox);
     }
   } catch {
     /* ignore if no prior job exists */
@@ -749,7 +908,8 @@ async function pollForgeJobUntilDone(jobId, controller) {
     }
     if (job.status === 'done') {
       const tris = unpackForgePreview(job.preview);
-      state.forgeMesh = { ...job, tris };
+      resetMeshTransformUi();
+      state.forgeMesh = { ...job, tris, rawTris: tris, rawVolumeMm3: job.volumeMm3 };
       if (job.qualityMetrics?.pythonCode) {
         state.lastBlenderCode = job.qualityMetrics.pythonCode;
       }
@@ -757,7 +917,7 @@ async function pollForgeJobUntilDone(jobId, controller) {
       saveLastForgeMeta(job.jobId);
       saveCtl?.markChanged();
       render();
-      viewport?.fit(job.bbox);
+      viewport?.fit(state.result?.bbox || job.bbox);
       return job;
     }
   }
@@ -1472,6 +1632,7 @@ function installProject(project) {
   saveCtl?.dispose();
   state.inference?.controller.abort();
   partCache.clear();
+  resetMeshTransformUi();
   state.forgeMesh = null;
   state.lastBlenderCode = null;
   state.project = project;
@@ -1647,6 +1808,145 @@ async function init() {
   $('fitBtn').addEventListener('click', () => viewport?.fit(state.result?.bbox));
   for (const v of ['iso', 'top', 'front'])
     $(`${v}Btn`).addEventListener('click', () => viewport?.view(v));
+
+  // Theme switcher (Optical Darkroom <-> Daylight Studio)
+  const applyThemeUi = (theme) => {
+    const t = theme === 'light' ? 'light' : 'dark';
+    document.documentElement.dataset.theme = t;
+    if ($('themeBtn')) {
+      $('themeBtn').textContent = t === 'light' ? '\u263E Darkroom' : '\u2600 Light';
+    }
+    viewport?.setTheme();
+  };
+  try {
+    const savedTheme = localStorage.getItem('shapecast.theme');
+    if (savedTheme === 'light' || savedTheme === 'dark') applyThemeUi(savedTheme);
+  } catch {
+    /* ignore */
+  }
+  $('themeBtn')?.addEventListener('click', () => {
+    const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+    applyThemeUi(next);
+    try {
+      localStorage.setItem('shapecast.theme', next);
+    } catch {
+      /* ignore */
+    }
+  });
+
+  // Showroom turntable
+  $('spinBtn')?.addEventListener('click', () => {
+    state.turntable = Boolean(viewport?.setTurntable(!state.turntable));
+    $('spinBtn')?.classList.toggle('active', state.turntable);
+  });
+
+  // Real-time PBR Photopolymer Resin Shaders & Support Overhang Radar
+  $('shaderBar')?.addEventListener('click', (e) => {
+    const btn = /** @type {HTMLElement} */ (e.target).closest('button[data-shader]');
+    if (!btn) return;
+    const mode = btn.getAttribute('data-shader') || 'clay';
+    viewport?.setShaderMode(mode);
+    $('shaderBar')
+      ?.querySelectorAll('button[data-shader]')
+      .forEach((b) => b.classList.toggle('active', b === btn));
+    updateTelemetryCards();
+  });
+
+  // 405nm UV Z-Layer X-Ray Scrubber & Animated Curing Sweep
+  $('uvSliceRange')?.addEventListener('input', () => {
+    stopUvScanAnim();
+    updateUvSliceHud();
+  });
+  $('uvScanBtn')?.addEventListener('click', () => {
+    if (state.uvScanAnim) {
+      stopUvScanAnim();
+      return;
+    }
+    const slider = /** @type {HTMLInputElement | null} */ ($('uvSliceRange'));
+    const btn = $('uvScanBtn');
+    if (!slider || !btn) return;
+    btn.classList.add('active');
+    btn.textContent = '\u23F8 Pause Scan';
+    const startTs = performance.now();
+    const durationMs = 4200;
+    const step = (now) => {
+      const p = Math.min(1, (now - startTs) / durationMs);
+      slider.value = String(Math.round(25 + p * 975));
+      updateUvSliceHud();
+      if (p < 1) {
+        state.uvScanAnim = requestAnimationFrame(step);
+      } else {
+        stopUvScanAnim();
+      }
+    };
+    state.uvScanAnim = requestAnimationFrame(step);
+  });
+
+  // 1-Click Scale Presets (updates scaleRef + live-rescales loaded Forge/Blender mesh)
+  $('quickScaleRow')?.addEventListener('click', (e) => {
+    const btn = /** @type {HTMLElement} */ (e.target).closest('button[data-scale-mm]');
+    if (!btn) return;
+    const mm = Number(btn.getAttribute('data-scale-mm'));
+    if (!(mm > 0)) return;
+    $('scaleRef').value = `${mm} mm longest side`;
+    metaChange();
+    $('quickScaleRow')
+      ?.querySelectorAll('button[data-scale-mm]')
+      .forEach((b) => b.classList.toggle('active', b === btn));
+    if (state.forgeMesh) {
+      state.meshTransform.targetMm = mm;
+      render();
+      viewport?.fit(state.result?.bbox);
+    }
+  });
+
+  // 1-Click Starter Briefs (zero-friction onboarding across Blender CAD & Hunyuan3D Sculpt)
+  $('starterPromptRow')?.addEventListener('click', (e) => {
+    const btn = /** @type {HTMLElement} */ (e.target).closest('button[data-starter]');
+    if (!btn) return;
+    const key = btn.getAttribute('data-starter') || '';
+    const starter = STARTER_BRIEFS[key];
+    if (!starter) return;
+    state.lastBlenderCode = null;
+    setMode(starter.mode);
+    const cadSel = /** @type {HTMLSelectElement | null} */ ($('cadPresetSelect'));
+    if (cadSel) cadSel.value = starter.presetKey || '';
+    state.project.name = starter.name;
+    state.project.scaleRef = starter.scaleRef;
+    state.project.brief = starter.brief;
+    $('projectName').value = starter.name;
+    $('scaleRef').value = starter.scaleRef;
+    $('brief').value = starter.brief;
+    metaChange();
+    $('starterPromptRow')
+      ?.querySelectorAll('button[data-starter]')
+      .forEach((b) => b.classList.toggle('active', b === btn));
+    $('quickScaleRow')
+      ?.querySelectorAll('button[data-scale-mm]')
+      .forEach((b) =>
+        b.classList.toggle('active', Number(b.getAttribute('data-scale-mm')) === starter.scaleMm),
+      );
+  });
+
+  // Non-Destructive Build-Plate Orientation Deck (exports directly into STL)
+  $('orientDeck')?.addEventListener('click', (e) => {
+    const tiltBtn = /** @type {HTMLElement} */ (e.target).closest('button[data-tilt]');
+    if (tiltBtn && state.forgeMesh) {
+      state.meshTransform.tiltDeg = Number(tiltBtn.getAttribute('data-tilt') || 0);
+      $('orientDeck')
+        ?.querySelectorAll('button[data-tilt]')
+        .forEach((b) => b.classList.toggle('active', b === tiltBtn));
+      render();
+      viewport?.fit(state.result?.bbox);
+    }
+  });
+  $('rotZ90Btn')?.addEventListener('click', () => {
+    if (!state.forgeMesh) return;
+    state.meshTransform.rotZDeg = (state.meshTransform.rotZDeg + 90) % 360;
+    $('rotZ90Btn')?.classList.toggle('active', state.meshTransform.rotZDeg !== 0);
+    render();
+    viewport?.fit(state.result?.bbox);
+  });
   $('newProjectBtn').addEventListener('click', () =>
     requestSwitch(async () => installProject(newProject())),
   );

@@ -23,7 +23,7 @@ import { runServerOAuthJsonSample } from './blenderGen.js';
 import { createJobManager, type JobManager } from './jobs.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-export const FORGE_VERSION = '4.0.4';
+export const FORGE_VERSION = '5.0.0';
 export const BLENDER_VERSION = '4.3.2';
 
 export interface ForgeConfig {

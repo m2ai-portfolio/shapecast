@@ -353,3 +353,156 @@ export function runMeshPrintChecks(bbox, volumeMm3, manifoldOk, { layerUm = 50 }
       : 'green';
   return { checks, bbox, volumeMm3, layers, worst };
 }
+
+/**
+ * Compute real-world Elegoo Saturn 3 (12K) MSLA print telemetry:
+ * estimated print time, layer count, solid vs hollowed resin mass/cost, and build-plate area %.
+ */
+export function estimateSaturn3Telemetry(bbox, volumeMm3, { layerUm = 50 } = {}) {
+  if (!bbox || !(volumeMm3 > 0)) {
+    return {
+      layers: 0,
+      printMinutes: 0,
+      printTimeLabel: '—',
+      solidMl: 0,
+      hollowMl: 0,
+      solidGrams: 0,
+      hollowGrams: 0,
+      solidCostUsd: 0,
+      hollowCostUsd: 0,
+      recommendHollow: false,
+      platePct: 0,
+    };
+  }
+  const [W, D] = SATURN3.build;
+  const [sx, sy, sz] = bbox.size;
+  const layers = Math.max(1, Math.ceil(sz / (layerUm / 1000)));
+  const cureSecByUm = { 10: 1.3, 30: 1.9, 50: 2.5, 100: 3.6 };
+  const normalCureSec = cureSecByUm[layerUm] ?? 2.5;
+  const peelCycleSec = 5.2; // Saturn 3 Z-lift + retract + rest-before-print
+  const burnLayers = Math.min(5, layers);
+  const burnSec = burnLayers * (32 + 6.5);
+  const normalSec = Math.max(0, layers - burnLayers) * (normalCureSec + peelCycleSec);
+  const totalSec = burnSec + normalSec;
+  const printMinutes = Math.max(1, Math.round(totalSec / 60));
+  const hrs = Math.floor(printMinutes / 60);
+  const mins = printMinutes % 60;
+  const printTimeLabel = hrs > 0 ? `${hrs}h ${String(mins).padStart(2, '0')}m` : `${mins}m`;
+
+  const solidMl = volumeMm3 / 1000;
+  const recommendHollow = solidMl > 25;
+  const hollowMl = recommendHollow ? Math.max(8, solidMl * 0.34) : solidMl;
+  const densityGPerMl = 1.12; // 8K photopolymer resin
+  const usdPerGram = 0.028; // ~$28 / 1kg bottle
+  const solidGrams = solidMl * densityGPerMl;
+  const hollowGrams = hollowMl * densityGPerMl;
+  const solidCostUsd = solidGrams * usdPerGram;
+  const hollowCostUsd = hollowGrams * usdPerGram;
+  const platePct = Math.min(100, ((sx * sy) / (W * D)) * 100);
+
+  return {
+    layers,
+    printMinutes,
+    printTimeLabel,
+    solidMl,
+    hollowMl,
+    solidGrams,
+    hollowGrams,
+    solidCostUsd,
+    hollowCostUsd,
+    recommendHollow,
+    platePct,
+  };
+}
+
+/**
+ * Non-destructively orient (Z-spin + X-tilt for MSLA peel-force reduction) and rescale a triangle soup,
+ * re-centering X/Y on (0,0) and grounding minZ = 0.00 mm on the Saturn 3 build plate.
+ */
+export function transformMeshTriangles(
+  rawTris,
+  { tiltDeg = 0, rotZDeg = 0, targetMm = null } = {},
+) {
+  if (!rawTris || !rawTris.length) {
+    return { tris: new Float32Array(0), bbox: null, scaleFactor: 1 };
+  }
+  const n = rawTris.length;
+  const out = new Float32Array(n);
+  const radZ = (rotZDeg * Math.PI) / 180;
+  const cz = Math.cos(radZ),
+    sz = Math.sin(radZ);
+  const radX = (tiltDeg * Math.PI) / 180;
+  const cx = Math.cos(radX),
+    sx = Math.sin(radX);
+
+  // Measure raw longest horizontal/overall span first if targetMm rescaling is requested
+  let scaleFactor = 1;
+  if (targetMm && targetMm > 0) {
+    let rMinX = Infinity,
+      rMinY = Infinity,
+      rMinZ = Infinity;
+    let rMaxX = -Infinity,
+      rMaxY = -Infinity,
+      rMaxZ = -Infinity;
+    for (let i = 0; i < n; i += 3) {
+      const x = rawTris[i],
+        y = rawTris[i + 1],
+        z = rawTris[i + 2];
+      if (x < rMinX) rMinX = x;
+      if (x > rMaxX) rMaxX = x;
+      if (y < rMinY) rMinY = y;
+      if (y > rMaxY) rMaxY = y;
+      if (z < rMinZ) rMinZ = z;
+      if (z > rMaxZ) rMaxZ = z;
+    }
+    const maxSpan = Math.max(rMaxX - rMinX, rMaxY - rMinY, rMaxZ - rMinZ, 1e-6);
+    scaleFactor = targetMm / maxSpan;
+  }
+
+  let minX = Infinity,
+    minY = Infinity,
+    minZ = Infinity;
+  let maxX = -Infinity,
+    maxY = -Infinity,
+    maxZ = -Infinity;
+
+  for (let i = 0; i < n; i += 3) {
+    const x0 = rawTris[i] * scaleFactor;
+    const y0 = rawTris[i + 1] * scaleFactor;
+    const z0 = rawTris[i + 2] * scaleFactor;
+    // 1. Rotate about Z
+    const x1 = x0 * cz - y0 * sz;
+    const y1 = x0 * sz + y0 * cz;
+    const z1 = z0;
+    // 2. Tilt about X (resin peel-force angle)
+    const x2 = x1;
+    const y2 = y1 * cx - z1 * sx;
+    const z2 = y1 * sx + z1 * cx;
+
+    out[i] = x2;
+    out[i + 1] = y2;
+    out[i + 2] = z2;
+    if (x2 < minX) minX = x2;
+    if (x2 > maxX) maxX = x2;
+    if (y2 < minY) minY = y2;
+    if (y2 > maxY) maxY = y2;
+    if (z2 < minZ) minZ = z2;
+    if (z2 > maxZ) maxZ = z2;
+  }
+
+  const shiftX = -0.5 * (minX + maxX);
+  const shiftY = -0.5 * (minY + maxY);
+  const shiftZ = -minZ;
+  for (let i = 0; i < n; i += 3) {
+    out[i] += shiftX;
+    out[i + 1] += shiftY;
+    out[i + 2] += shiftZ;
+  }
+
+  const bbox = {
+    min: [minX + shiftX, minY + shiftY, 0],
+    max: [maxX + shiftX, maxY + shiftY, maxZ + shiftZ],
+    size: [maxX - minX, maxY - minY, maxZ - minZ],
+  };
+  return { tris: out, bbox, scaleFactor };
+}

@@ -1,60 +1,63 @@
-<title>ShapeCast</title>
+<title>ShapeCast — 405nm UV Resin Pre-Flight &amp; AI 3D Studio</title>
 <style>
-  /* layout: three columns (capture | viewport | parts and print) that stack at phone width; the viewport is the hero */
+  /* Optical Darkroom Studio default + crisp Studio Light toggle */
   :root {
-    --bg: #f3f2ee;
-    --fg: #1f1f1c;
-    --muted: #6b6a64;
-    --panel: #ffffff;
-    --line: #d9d6cd;
-    --accent: #c97a12;
-    --accent-ink: #ffffff;
-    --red: #b3261e;
-    --amber: #b86e00;
-    --green: #2d7d46;
-    --info: #4a5a73;
-    --plate: #b9b5aa;
-    --grid: #8e8a80;
-    --part: #8a8f99;
-    --font-ui: 'IBM Plex Sans', system-ui, sans-serif;
+    --bg: #0b0d12;
+    --bg-elev: #121620;
+    --fg: #eef0f6;
+    --muted: #8b93a7;
+    --panel: #151924;
+    --panel-2: #1b2030;
+    --line: #262d3f;
+    --line-bright: #364059;
+    --accent: #f59e0b;
+    --accent-hover: #fbbf24;
+    --accent-ink: #0f1115;
+    --uv: #a855f7;
+    --uv-bright: #c084fc;
+    --red: #f87171;
+    --amber: #fbbf24;
+    --green: #34d399;
+    --info: #60a5fa;
+    --plate: #1e2433;
+    --grid: #3b4459;
+    --grid-major: #5c6887;
+    --part: #c2cad6;
+    --glass: rgba(16, 20, 30, 0.82);
+    --viewport-bg: radial-gradient(circle at 50% 38%, #1f2637 0%, #0d1018 74%, #080a0f 100%);
+    --font-ui: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
     --font-num: 'IBM Plex Mono', ui-monospace, monospace;
     --font-display: 'Barlow Condensed', 'Arial Narrow', sans-serif;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme='light']) {
-      --bg: #17181a;
-      --fg: #ebe9e3;
-      --muted: #9a9890;
-      --panel: #202226;
-      --line: #34373d;
-      --accent: #e0912a;
-      --accent-ink: #1a1a1a;
-      --red: #ff6b61;
-      --amber: #f0a73a;
-      --green: #5fc27d;
-      --info: #9fb4d6;
-      --plate: #3a3d44;
-      --grid: #5a5e66;
-      --part: #dcdad3;
-      color-scheme: dark;
-    }
-  }
-  :root[data-theme='dark'] {
-    --bg: #17181a;
-    --fg: #ebe9e3;
-    --muted: #9a9890;
-    --panel: #202226;
-    --line: #34373d;
-    --accent: #e0912a;
-    --accent-ink: #1a1a1a;
-    --red: #ff6b61;
-    --amber: #f0a73a;
-    --green: #5fc27d;
-    --info: #9fb4d6;
-    --plate: #3a3d44;
-    --grid: #5a5e66;
-    --part: #dcdad3;
     color-scheme: dark;
+  }
+  :root[data-theme='light'] {
+    --bg: #f1f0ec;
+    --bg-elev: #ffffff;
+    --fg: #18191c;
+    --muted: #62656f;
+    --panel: #ffffff;
+    --panel-2: #f6f5f1;
+    --line: #d6d4cc;
+    --line-bright: #bab7ac;
+    --accent: #d97706;
+    --accent-hover: #b45309;
+    --accent-ink: #ffffff;
+    --uv: #7e22ce;
+    --uv-bright: #9333ea;
+    --red: #dc2626;
+    --amber: #d97706;
+    --green: #059669;
+    --info: #2563eb;
+    --plate: #cbd0da;
+    --grid: #9ca3af;
+    --grid-major: #6b7280;
+    --part: #949ba6;
+    --glass: rgba(255, 255, 255, 0.86);
+    --viewport-bg: radial-gradient(circle at 50% 38%, #ffffff 0%, #e7e8ee 80%, #dcdfe7 100%);
+    color-scheme: light;
+  }
+  * {
+    box-sizing: border-box;
   }
   html,
   body {
@@ -64,20 +67,19 @@
     margin: 0;
     background: var(--bg);
     color: var(--fg);
-    font: 14px/1.45 var(--font-ui);
-    padding-block: 0;
-    padding-inline: 16px;
+    font: 13.5px/1.45 var(--font-ui);
+    padding: 0 16px 18px;
   }
   h1 {
     font: 600 28px/1 var(--font-display);
-    letter-spacing: 0.02em;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
     margin: 0;
-    text-wrap: balance;
   }
   h2 {
-    font: 600 13px/1.2 var(--font-ui);
+    font: 600 11.5px/1.2 var(--font-ui);
     text-transform: uppercase;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.1em;
     color: var(--muted);
     margin: 0 0 8px;
   }
@@ -86,21 +88,35 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    padding-block: 12px;
+    padding: 11px 4px;
     border-bottom: 1px solid var(--line);
     flex-wrap: wrap;
+  }
+  .brand-mark {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .uv-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent), var(--uv));
+    box-shadow: 0 0 10px rgba(168, 85, 247, 0.65);
   }
   header .sub {
     color: var(--muted);
     font-size: 12px;
+    margin-top: 2px;
   }
   main {
     display: grid;
-    grid-template-columns: 300px minmax(0, 1fr) 340px;
-    gap: 16px;
-    padding-block: 16px;
+    grid-template-columns: 325px minmax(0, 1fr) 360px;
+    gap: 14px;
+    padding-top: 14px;
+    align-items: start;
   }
-  @media (max-width: 1000px) {
+  @media (max-width: 1120px) {
     main {
       grid-template-columns: 1fr;
     }
@@ -108,20 +124,23 @@
   section.col {
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 12px;
     min-width: 0;
   }
   .card {
     background: var(--panel);
     border: 1px solid var(--line);
-    border-radius: 6px;
-    padding: 12px;
+    border-radius: 10px;
+    padding: 13px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
   }
   label {
     display: block;
-    font-size: 12px;
+    font-size: 11.5px;
+    font-weight: 600;
     color: var(--muted);
     margin-bottom: 4px;
+    letter-spacing: 0.02em;
   }
   input,
   textarea,
@@ -134,31 +153,52 @@
   textarea,
   select {
     width: 100%;
-    box-sizing: border-box;
     background: var(--bg);
     border: 1px solid var(--line);
-    border-radius: 4px;
-    padding: 6px 8px;
+    border-radius: 6px;
+    padding: 7px 9px;
+    transition: border-color 0.15s ease;
+  }
+  input[type='text']:hover,
+  textarea:hover,
+  select:hover {
+    border-color: var(--line-bright);
   }
   textarea {
-    min-height: 72px;
+    min-height: 68px;
     resize: vertical;
   }
   button {
-    background: var(--panel);
+    background: var(--panel-2);
     border: 1px solid var(--line);
-    border-radius: 4px;
+    border-radius: 6px;
     padding: 6px 10px;
     cursor: pointer;
+    font-weight: 500;
+    transition:
+      background 0.15s ease,
+      border-color 0.15s ease,
+      transform 0.08s ease;
+  }
+  button:hover:not(:disabled) {
+    border-color: var(--line-bright);
+    background: color-mix(in srgb, var(--panel-2) 82%, var(--fg));
+  }
+  button:active:not(:disabled) {
+    transform: translateY(1px);
   }
   button.primary {
-    background: var(--accent);
+    background: linear-gradient(180deg, var(--accent-hover), var(--accent));
     color: var(--accent-ink);
     border-color: var(--accent);
     font-weight: 600;
+    box-shadow: 0 2px 12px rgba(245, 158, 11, 0.25);
+  }
+  button.primary:hover:not(:disabled) {
+    filter: brightness(1.06);
   }
   button:disabled {
-    opacity: 0.5;
+    opacity: 0.45;
     cursor: default;
   }
   button:focus-visible,
@@ -174,15 +214,69 @@
     flex-wrap: wrap;
     align-items: center;
   }
+  /* Segmented Engine Switcher */
+  .seg-group {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    gap: 4px;
+    background: var(--bg);
+    padding: 4px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    margin-bottom: 10px;
+  }
+  .seg-group button {
+    border-color: transparent;
+    background: transparent;
+    padding: 6px 8px;
+    font-size: 12.5px;
+    border-radius: 5px;
+  }
+  .seg-group button.primary {
+    background: var(--accent);
+    color: var(--accent-ink);
+    box-shadow: 0 1px 6px rgba(245, 158, 11, 0.35);
+  }
+  /* Pill micro-buttons */
+  .pill-row {
+    display: flex;
+    gap: 5px;
+    flex-wrap: wrap;
+    margin-top: 5px;
+  }
+  .pill {
+    font-size: 11px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .pill:hover {
+    color: var(--fg);
+    border-color: var(--accent);
+  }
+  .pill.active {
+    background: color-mix(in srgb, var(--accent) 18%, var(--bg));
+    color: var(--accent);
+    border-color: var(--accent);
+    font-weight: 600;
+  }
   .well {
-    border: 1px dashed var(--line);
-    border-radius: 6px;
-    padding: 10px;
+    border: 1.5px dashed var(--line-bright);
+    background: color-mix(in srgb, var(--bg) 65%, var(--panel));
+    border-radius: 8px;
+    padding: 12px 10px;
     text-align: center;
     color: var(--muted);
+    transition:
+      border-color 0.15s ease,
+      background 0.15s ease;
   }
   .well.over {
     border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 10%, var(--bg));
   }
   .thumbs {
     display: flex;
@@ -195,9 +289,9 @@
     position: relative;
     width: 64px;
     height: 64px;
-    border-radius: 4px;
+    border-radius: 6px;
     overflow: hidden;
-    border: 1px solid var(--line);
+    border: 1px solid var(--line-bright);
   }
   .thumb img {
     width: 100%;
@@ -211,7 +305,10 @@
     right: 2px;
     padding: 0 5px;
     line-height: 18px;
-    font-size: 12px;
+    font-size: 11px;
+    background: rgba(0, 0, 0, 0.72);
+    color: #fff;
+    border: none;
   }
   .thumb.pending::after {
     content: 'not uploaded';
@@ -222,14 +319,19 @@
     font-size: 10px;
     text-align: center;
   }
+
+  /* Hero Optical Viewport & Floating HUD */
   #viewWrap {
     position: relative;
-    background: var(--panel);
+    background: var(--viewport-bg);
     border: 1px solid var(--line);
-    border-radius: 6px;
-    min-height: 420px;
-    height: min(70vh, 720px);
+    border-radius: 12px;
+    min-height: 500px;
+    height: min(76vh, 780px);
     overflow: hidden;
+    box-shadow:
+      inset 0 0 60px rgba(0, 0, 0, 0.35),
+      0 12px 32px rgba(0, 0, 0, 0.28);
   }
   #viewport {
     width: 100%;
@@ -237,21 +339,150 @@
     display: block;
     touch-action: none;
   }
-  .viewbar {
+  .hud-bar {
     position: absolute;
-    top: 8px;
-    left: 8px;
     display: flex;
-    gap: 6px;
+    gap: 4px;
+    align-items: center;
+    background: var(--glass);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 4px;
+    z-index: 4;
+  }
+  .hud-bar button {
+    font-size: 11.5px;
+    padding: 4px 8px;
+    border-radius: 5px;
+    background: transparent;
+    border: 1px solid transparent;
+  }
+  .hud-bar button:hover {
+    background: color-mix(in srgb, var(--fg) 8%, transparent);
+  }
+  .hud-bar button.active {
+    background: color-mix(in srgb, var(--accent) 20%, transparent);
+    color: var(--accent);
+    border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+    font-weight: 600;
+  }
+  .hud-bar button.uv-active {
+    background: color-mix(in srgb, var(--uv) 24%, transparent);
+    color: var(--uv-bright);
+    border-color: var(--uv);
+    font-weight: 600;
+  }
+  .viewbar {
+    top: 10px;
+    left: 10px;
+  }
+  .shaderbar {
+    top: 10px;
+    right: 10px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    max-width: calc(100% - 240px);
+  }
+  .swatch {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 4px;
+    vertical-align: middle;
+  }
+  #refPipWrap {
+    position: absolute;
+    left: 12px;
+    bottom: 62px;
+    width: 88px;
+    background: var(--glass);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--line-bright);
+    border-radius: 8px;
+    padding: 4px;
+    z-index: 4;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  }
+  #refPipWrap img {
+    width: 100%;
+    height: 72px;
+    object-fit: cover;
+    border-radius: 5px;
+    display: block;
+  }
+  #refPipWrap .pip-cap {
+    font: 600 9.5px/1.2 var(--font-num);
+    color: var(--muted);
+    text-align: center;
+    margin-top: 3px;
+    text-transform: uppercase;
   }
   #bboxReadout {
     position: absolute;
-    right: 10px;
-    bottom: 8px;
-    font: 12px var(--font-num);
+    right: 14px;
+    bottom: 62px;
+    font: 600 11.5px var(--font-num);
+    color: var(--fg);
+    background: var(--glass);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 3px 8px;
+    font-variant-numeric: tabular-nums;
+    z-index: 4;
+  }
+  /* 405nm UV Layer X-Ray Scrubber Dock */
+  #uvSlicerBar {
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--glass);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    padding: 6px 10px;
+    z-index: 4;
+  }
+  #uvSlicerBar.slicing {
+    border-color: var(--uv);
+    box-shadow: 0 0 18px rgba(168, 85, 247, 0.28);
+  }
+  #uvScanBtn {
+    font-size: 11.5px;
+    padding: 4px 9px;
+    white-space: nowrap;
+    border-color: color-mix(in srgb, var(--uv) 55%, var(--line));
+    color: var(--uv-bright);
+  }
+  #uvScanBtn.active {
+    background: var(--uv);
+    color: #fff;
+    border-color: var(--uv);
+  }
+  #uvSliceRange {
+    flex: 1;
+    accent-color: var(--uv);
+    cursor: pointer;
+    margin: 0;
+  }
+  #uvSliceReadout {
+    font: 600 11px var(--font-num);
     color: var(--muted);
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    min-width: 175px;
+    text-align: right;
   }
+  #uvSlicerBar.slicing #uvSliceReadout {
+    color: var(--uv-bright);
+  }
+
   #viewNotice {
     position: absolute;
     inset: 0;
@@ -262,26 +493,73 @@
     text-align: center;
   }
   #status {
-    min-height: 20px;
-    font-size: 13px;
+    min-height: 18px;
+    font-size: 12.5px;
+    color: var(--accent);
+    margin-top: 6px;
+    font-weight: 500;
+  }
+
+  /* Saturn 3 Pre-Flight Telemetry Grid */
+  .telemetry-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+    margin-bottom: 10px;
+  }
+  .t-tile {
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    padding: 7px 9px;
+  }
+  .t-tile .t-k {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
     color: var(--muted);
   }
+  .t-tile .t-v {
+    font: 600 15px/1.25 var(--font-num);
+    color: var(--fg);
+    margin-top: 2px;
+    font-variant-numeric: tabular-nums;
+  }
+  .t-tile .t-sub {
+    font-size: 10.5px;
+    color: var(--muted);
+    margin-top: 1px;
+  }
+  .orient-box {
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 8px 9px;
+    margin-bottom: 10px;
+  }
+  .export-cta {
+    width: 100%;
+    padding: 10px 14px;
+    font-size: 14px;
+    letter-spacing: 0.01em;
+  }
+
   .chat {
     display: flex;
     flex-direction: column;
     gap: 6px;
-    max-height: 260px;
+    max-height: 220px;
     overflow: auto;
   }
   .msg {
     padding: 6px 8px;
-    border-radius: 4px;
+    border-radius: 6px;
     background: var(--bg);
     border: 1px solid var(--line);
-    font-size: 13px;
+    font-size: 12.5px;
   }
   .msg.user {
-    border-color: var(--accent);
+    border-color: color-mix(in srgb, var(--accent) 65%, var(--line));
   }
   table {
     width: 100%;
@@ -310,7 +588,7 @@
     color: inherit;
   }
   tr.sel td {
-    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
   }
   .tuple {
     display: flex;
@@ -332,8 +610,9 @@
     gap: 8px;
     align-items: baseline;
     font-size: 12px;
-    padding: 4px 8px;
-    border-radius: 4px;
+    padding: 5px 8px;
+    border-radius: 6px;
+    background: var(--bg);
     border: 1px solid var(--line);
   }
   .chip::before {
@@ -347,6 +626,7 @@
   }
   .chip.red::before {
     background: var(--red);
+    box-shadow: 0 0 6px var(--red);
   }
   .chip.amber::before {
     background: var(--amber);
@@ -357,9 +637,9 @@
   .assume {
     border-left: 3px solid var(--amber);
     padding: 6px 10px;
-    font-size: 13px;
+    font-size: 12.5px;
     background: color-mix(in srgb, var(--amber) 10%, transparent);
-    border-radius: 0 4px 4px 0;
+    border-radius: 0 6px 6px 0;
   }
   .assume ul {
     margin: 4px 0 0 16px;
@@ -367,7 +647,7 @@
   }
   .banner {
     padding: 8px 10px;
-    border-radius: 4px;
+    border-radius: 6px;
     font-size: 13px;
     border: 1px solid var(--line);
     margin-top: 10px;
@@ -395,7 +675,7 @@
     overflow: auto;
   }
   .small {
-    font-size: 12px;
+    font-size: 11.5px;
     color: var(--muted);
   }
   .num {
@@ -406,6 +686,7 @@
     display: inline;
     color: var(--accent);
     cursor: pointer;
+    font-weight: 600;
   }
   .mt {
     margin-top: 10px;
@@ -413,26 +694,45 @@
 </style>
 <link
   rel="stylesheet"
-  href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600&family=IBM+Plex+Sans:wght@400;600&family=IBM+Plex+Mono&display=swap"
+  href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap"
 />
 <header>
   <div>
-    <div class="row" style="gap: 8px; align-items: baseline">
-      <h1>ShapeCast</h1>
+    <div class="row" style="gap: 9px; align-items: center">
+      <span class="brand-mark"><span class="uv-dot"></span><h1>ShapeCast</h1></span>
       <span
         id="versionBadge"
         class="small num"
-        style="padding: 1px 6px; border: 1px solid var(--line); border-radius: 4px"
-        >UI v4.0</span
+        style="
+          padding: 2px 7px;
+          border: 1px solid var(--line);
+          border-radius: 999px;
+          background: var(--panel);
+        "
+        >UI v5.0</span
+      >
+      <span
+        class="small num"
+        style="
+          padding: 2px 7px;
+          border: 1px solid color-mix(in srgb, var(--uv) 45%, var(--line));
+          border-radius: 999px;
+          color: var(--uv-bright);
+        "
+        >405nm MSLA • SATURN 3 12K</span
       >
     </div>
-    <div class="sub">Photo, sketch or prompt to a Saturn 3 resin print</div>
+    <div class="sub">
+      Photo, sketch, or CAD brief &rarr; watertight 12K photopolymer resin print with live UV layer
+      X-ray
+    </div>
   </div>
   <div class="row">
     <select id="projectSelect" aria-label="Project" style="width: auto">
       <option value="">New project</option>
     </select>
     <button id="newProjectBtn">New</button>
+    <button id="themeBtn" title="Switch Darkroom / Daylight Studio">☀ Light</button>
     <span id="saveState" class="small">local only</span>
   </div>
 </header>
@@ -451,16 +751,14 @@
 <main>
   <section class="col">
     <div class="card">
-      <div class="row" style="justify-content: space-between; margin-bottom: 6px">
-        <h2 style="margin: 0">Capture</h2>
-        <span id="forgeBadge" class="small"></span>
+      <div class="row" style="justify-content: space-between; margin-bottom: 8px">
+        <h2 style="margin: 0">1. Capture &amp; Engine</h2>
+        <span id="forgeBadge" class="small num"></span>
       </div>
-      <div class="row" style="gap: 6px; margin-bottom: 8px">
-        <button id="modeBtnForge" class="primary" style="flex: 1; padding: 6px 8px">
-          Hunyuan3D
-        </button>
-        <button id="modeBtnBlender" style="flex: 1; padding: 6px 8px">Blender 3D</button>
-        <button id="modeBtnBlocks" style="padding: 6px 8px">Blocks</button>
+      <div class="seg-group">
+        <button id="modeBtnForge" class="primary">Hunyuan3D Sculpt</button>
+        <button id="modeBtnBlender">Blender 3D CAD</button>
+        <button id="modeBtnBlocks">Blocks</button>
         <select id="modeSelect" class="hidden" aria-label="Engine">
           <option value="forge">Mesh Forge (Hunyuan3D + Blender)</option>
           <option value="blender">Blender 3D (Claude bpy -> AlienPC)</option>
@@ -468,7 +766,7 @@
         </select>
       </div>
       <div id="dropWell" class="well">
-        Drop photos here or
+        Drop reference photo / turnarounds or
         <label class="inline-label"
           ><input
             id="photoInput"
@@ -477,24 +775,38 @@
             capture="environment"
             multiple
             hidden
-          />take / choose a photo</label
+          />browse image</label
         >
-        <div id="photoNote" class="small"></div>
+        <div id="photoNote" class="small" style="margin-top: 4px"></div>
         <div id="thumbs" class="thumbs"></div>
       </div>
-      <label for="scaleRef" class="mt">Scale reference</label>
+
+      <label for="scaleRef" class="mt">Target Scale (longest side)</label>
       <input
         id="scaleRef"
         type="text"
         maxlength="300"
         placeholder="120 mm longest side (or coin is 24.26 mm)"
       />
-      <label for="brief" class="mt">Brief</label>
+      <div class="pill-row" id="quickScaleRow">
+        <button type="button" class="pill" data-scale-mm="32">32mm Mini</button>
+        <button type="button" class="pill" data-scale-mm="75">75mm Bust</button>
+        <button type="button" class="pill active" data-scale-mm="120">120mm Prop</button>
+        <button type="button" class="pill" data-scale-mm="180">180mm Centerpiece</button>
+      </div>
+
+      <label for="brief" class="mt">Design Brief</label>
       <textarea
         id="brief"
         maxlength="4000"
-        placeholder="a 1970 chevy chevelle miniature car, or a stand for my phone"
+        placeholder="Describe your sculpt or mechanical part — or leave blank to reconstruct from photo..."
       ></textarea>
+      <div class="pill-row" id="starterPromptRow">
+        <button type="button" class="pill" data-starter="isd">✦ ISD Engine Array</button>
+        <button type="button" class="pill" data-starter="turret">✦ Quad Turbolaser</button>
+        <button type="button" class="pill" data-starter="mecha">✦ Mecha Bust</button>
+      </div>
+
       <div
         id="studioPrepWrap"
         class="row mt small"
@@ -504,7 +816,7 @@
         <select
           id="studioPrepSelect"
           aria-label="Step 0 Studio Prep"
-          style="width: auto; padding: 3px 6px; font-size: 12px"
+          style="width: auto; padding: 4px 6px; font-size: 12px"
         >
           <option value="auto" selected>Auto (Gemini 3.1/3-Pro &rarr; GPT-Image-2.5)</option>
           <option value="off">Raw Photo (Prepped in Google Flow / Whisk)</option>
@@ -522,9 +834,11 @@
           <select
             id="cadProviderSelect"
             aria-label="CAD OAuth Model"
-            style="width: auto; padding: 3px 6px; font-size: 12px"
+            style="width: auto; padding: 4px 6px; font-size: 12px"
           >
-            <option value="auto" selected>Auto (Opus 5.5 OAuth &rarr; GPT-6.1-Sol OAuth &rarr; Gemini 4)</option>
+            <option value="auto" selected>
+              Auto (Opus 5.5 OAuth &rarr; GPT-6.1-Sol OAuth &rarr; Gemini 4)
+            </option>
             <option value="claude">Claude Opus 5.5 (OAuth Subscription)</option>
             <option value="codex">ChatGPT GPT-6.1-Sol (OAuth Subscription)</option>
             <option value="gemini">Google Gemini 4 (gemini-4-argon)</option>
@@ -538,7 +852,7 @@
           <select
             id="cadPresetSelect"
             aria-label="CAD Sub-Assembly Preset"
-            style="width: auto; padding: 3px 6px; font-size: 12px"
+            style="width: auto; padding: 4px 6px; font-size: 12px"
           >
             <option value="">Custom Brief / Photo</option>
             <option value="star_destroyer_engines">Star Destroyer Rear Engine Baffle</option>
@@ -550,57 +864,183 @@
       </div>
       <label
         class="row mt small"
-        style="gap: 6px; cursor: pointer; color: var(--fg); align-items: center"
+        style="gap: 6px; cursor: pointer; color: var(--fg); align-items: center; font-weight: 400"
       >
         <input id="autoRefineCheck" type="checkbox" style="width: auto; margin: 0" />
         Auto-refine with Critic Agent (&gt;= 85% quality)
       </label>
       <div class="row mt">
-        <button id="buildBtn" class="primary">Generate mesh</button
-        ><button id="refineBtn" title="Run Claude Critic Agent to inspect & refine the 3D mesh">
+        <button id="buildBtn" class="primary" style="flex: 1; padding: 9px 12px">
+          Generate mesh</button
+        ><button id="refineBtn" title="Run Critic Agent to inspect & refine the 3D mesh">
           Review &amp; Refine</button
         ><button id="stopBtn" class="hidden">Stop</button>
       </div>
       <div id="status"></div>
       <div id="criticStatus" class="small" style="margin-top: 4px"></div>
     </div>
+
     <div class="card">
-      <h2>Revise with Claude</h2>
+      <h2>Iterative AI Co-Pilot</h2>
       <div id="chatLog" class="chat"></div>
       <div class="row mt">
         <input
           id="chatInput"
           type="text"
           maxlength="2000"
-          placeholder="make the slot 2 mm wider"
+          placeholder="e.g. deepen panel seams 0.6 mm, widen base..."
           style="flex: 1"
-        /><button id="sendBtn">Send</button>
+        /><button id="sendBtn">Revise</button>
       </div>
       <div id="staleCard" class="banner warn hidden">
         <span id="staleText"></span>
         <span class="row mt"
-          ><button id="staleApply">Apply anyway</button
+          ><button id="staleApply" class="primary">Apply anyway</button
           ><button id="staleDiscard">Discard</button></span
         >
       </div>
     </div>
   </section>
+
   <section class="col">
     <div id="viewWrap">
       <canvas id="viewport"></canvas>
-      <div class="viewbar">
-        <button id="fitBtn">Fit</button><button id="isoBtn">Iso</button
-        ><button id="topBtn">Top</button><button id="frontBtn">Front</button>
+
+      <div class="hud-bar viewbar">
+        <button id="fitBtn" title="Fit model in frame">Fit</button>
+        <button id="isoBtn" title="3/4 Isometric view">Iso</button>
+        <button id="topBtn" title="Top build-plate view">Top</button>
+        <button id="frontBtn" title="Front elevation view">Front</button>
+        <button id="spinBtn" title="Showroom turntable rotation">&#x21bb; Spin</button>
       </div>
+
+      <div class="hud-bar shaderbar" id="shaderBar">
+        <button type="button" class="active" data-shader="clay" title="Sculptor Crevice AO Clay">
+          <span class="swatch" style="background: #b4bcc8"></span>Clay
+        </button>
+        <button type="button" data-shader="aqua8k" title="Elegoo 8K Space-Aqua Photopolymer">
+          <span class="swatch" style="background: #5d8aa8"></span>8K Resin
+        </button>
+        <button type="button" data-shader="emerald" title="Translucent Emerald UV Resin">
+          <span class="swatch" style="background: #10b981"></span>Emerald UV
+        </button>
+        <button type="button" data-shader="obsidian" title="Engineering Matte Obsidian Tough">
+          <span class="swatch" style="background: #374151; border: 1px solid #9ca3af"></span>Obsidian
+        </button>
+        <button
+          type="button"
+          data-shader="overhang"
+          title="Highlight <45° downward overhangs needing Chitubox supports"
+        >
+          <span class="swatch" style="background: #ef4444"></span>Support Radar
+        </button>
+      </div>
+
+      <div id="refPipWrap" class="hidden">
+        <img id="refPipImg" alt="Reference" />
+        <div class="pip-cap">Ref Photo</div>
+      </div>
+
       <div id="bboxReadout"></div>
+
+      <div id="uvSlicerBar">
+        <button type="button" id="uvScanBtn" title="Animate 405nm UV curing layers bottom-to-top">
+          &#9654; 405nm UV Scan
+        </button>
+        <input
+          id="uvSliceRange"
+          type="range"
+          min="0"
+          max="1000"
+          value="1000"
+          aria-label="405nm UV Z-Layer X-Ray Slicer"
+        />
+        <span id="uvSliceReadout">FULL MESH • Z X-RAY READY</span>
+      </div>
+
       <div id="viewNotice" class="hidden">
         3D preview unavailable in this browser. The parts table and export still work.
       </div>
     </div>
   </section>
+
   <section class="col">
     <div class="card">
-      <h2>Parts / Mesh</h2>
+      <div class="row" style="justify-content: space-between; margin-bottom: 8px">
+        <h2 style="margin: 0">2. Saturn 3 Pre-Flight Deck</h2>
+        <div class="row" style="gap: 5px">
+          <label for="layerSelect" style="margin: 0; font-weight: 500">Slice</label>
+          <select id="layerSelect" style="width: auto; padding: 3px 6px; font-size: 12px">
+            <option value="10">10 &micro;m Ultra</option>
+            <option value="30">30 &micro;m Fine</option>
+            <option value="50" selected>50 &micro;m Std</option>
+            <option value="100">100 &micro;m Draft</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="telemetry-grid" id="telemetryGrid">
+        <div class="t-tile">
+          <div class="t-k">Est. Print Time</div>
+          <div class="t-v" id="telTime">&mdash;</div>
+          <div class="t-sub" id="telTimeSub">Elegoo Saturn 3 12K</div>
+        </div>
+        <div class="t-tile">
+          <div class="t-k">Resin Cost &amp; Mass</div>
+          <div class="t-v" id="telCost">&mdash;</div>
+          <div class="t-sub" id="telCostSub">8K Photopolymer</div>
+        </div>
+        <div class="t-tile">
+          <div class="t-k">405nm UV Layers</div>
+          <div class="t-v" id="telLayers">&mdash;</div>
+          <div class="t-sub" id="telLayersSub">19 &times; 24 &micro;m XY</div>
+        </div>
+        <div class="t-tile">
+          <div class="t-k">Support Overhangs</div>
+          <div class="t-v" id="telOverhang">&mdash;</div>
+          <div class="t-sub" id="telOverhangSub">&lt;45&deg; surface area</div>
+        </div>
+      </div>
+
+      <div id="orientDeck" class="orient-box hidden">
+        <div class="row" style="justify-content: space-between; margin-bottom: 5px">
+          <span class="small" style="font-weight: 600; color: var(--fg)"
+            >Live Build-Plate Orientation (exports to STL)</span
+          >
+          <span class="small num" id="orientLabel">0&deg; tilt • 0&deg; Z</span>
+        </div>
+        <div class="pill-row" style="margin-top: 0">
+          <button type="button" class="pill active" data-tilt="0">Flat 0&deg;</button>
+          <button
+            type="button"
+            class="pill"
+            data-tilt="30"
+            title="Recommended MSLA resin tilt to cut peel suction force"
+          >
+            Resin Tilt 30&deg;
+          </button>
+          <button type="button" class="pill" data-tilt="45">Steep 45&deg;</button>
+          <button type="button" class="pill" id="rotZ90Btn" title="Rotate 90° around Z to fit wide parts">
+            &#x21bb; Rotate Z 90&deg;
+          </button>
+        </div>
+      </div>
+
+      <div id="checks" class="chips"></div>
+
+      <div class="mt">
+        <button id="exportBtn" class="primary export-cta">
+          &#x2B07; Export Saturn 3 Print Pack (.zip STL)
+        </button>
+        <div class="row mt" style="justify-content: space-between">
+          <button id="exportJsonBtn" style="font-size: 12px; padding: 4px 8px">Export JSON</button>
+          <span id="exportNote" class="small"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>3. Active Model &amp; Geometry</h2>
       <div class="row" style="margin-bottom: 8px">
         <label for="projectName" style="margin: 0">Name</label
         ><input id="projectName" type="text" maxlength="80" style="flex: 1" />
@@ -621,26 +1061,9 @@
       </div>
     </div>
     <div id="assumptions" class="assume hidden"></div>
-    <div class="card">
-      <h2>Print check <span class="small">Saturn 3</span></h2>
-      <div class="row" style="margin-bottom: 8px">
-        <label for="layerSelect" style="margin: 0">Layer</label
-        ><select id="layerSelect" style="width: auto">
-          <option value="10">10 um</option>
-          <option value="30">30 um</option>
-          <option value="50" selected>50 um</option>
-          <option value="100">100 um</option>
-        </select>
-      </div>
-      <div id="checks" class="chips"></div>
-      <div class="row mt">
-        <button id="exportBtn" class="primary">Export .zip (STL)</button
-        ><button id="exportJsonBtn">Export JSON</button>
-      </div>
-      <div id="exportNote" class="small"></div>
-    </div>
+
     <details class="card">
-      <summary>Raw reply / debug</summary>
+      <summary>Raw telemetry / debug JSON</summary>
       <pre id="rawReply"></pre>
     </details>
   </section>
@@ -1711,6 +2134,159 @@ function runMeshPrintChecks(bbox, volumeMm3, manifoldOk, { layerUm = 50 } = {}) 
   return { checks, bbox, volumeMm3, layers, worst };
 }
 
+/**
+ * Compute real-world Elegoo Saturn 3 (12K) MSLA print telemetry:
+ * estimated print time, layer count, solid vs hollowed resin mass/cost, and build-plate area %.
+ */
+function estimateSaturn3Telemetry(bbox, volumeMm3, { layerUm = 50 } = {}) {
+  if (!bbox || !(volumeMm3 > 0)) {
+    return {
+      layers: 0,
+      printMinutes: 0,
+      printTimeLabel: '—',
+      solidMl: 0,
+      hollowMl: 0,
+      solidGrams: 0,
+      hollowGrams: 0,
+      solidCostUsd: 0,
+      hollowCostUsd: 0,
+      recommendHollow: false,
+      platePct: 0,
+    };
+  }
+  const [W, D] = SATURN3.build;
+  const [sx, sy, sz] = bbox.size;
+  const layers = Math.max(1, Math.ceil(sz / (layerUm / 1000)));
+  const cureSecByUm = { 10: 1.3, 30: 1.9, 50: 2.5, 100: 3.6 };
+  const normalCureSec = cureSecByUm[layerUm] ?? 2.5;
+  const peelCycleSec = 5.2; // Saturn 3 Z-lift + retract + rest-before-print
+  const burnLayers = Math.min(5, layers);
+  const burnSec = burnLayers * (32 + 6.5);
+  const normalSec = Math.max(0, layers - burnLayers) * (normalCureSec + peelCycleSec);
+  const totalSec = burnSec + normalSec;
+  const printMinutes = Math.max(1, Math.round(totalSec / 60));
+  const hrs = Math.floor(printMinutes / 60);
+  const mins = printMinutes % 60;
+  const printTimeLabel = hrs > 0 ? `${hrs}h ${String(mins).padStart(2, '0')}m` : `${mins}m`;
+
+  const solidMl = volumeMm3 / 1000;
+  const recommendHollow = solidMl > 25;
+  const hollowMl = recommendHollow ? Math.max(8, solidMl * 0.34) : solidMl;
+  const densityGPerMl = 1.12; // 8K photopolymer resin
+  const usdPerGram = 0.028; // ~$28 / 1kg bottle
+  const solidGrams = solidMl * densityGPerMl;
+  const hollowGrams = hollowMl * densityGPerMl;
+  const solidCostUsd = solidGrams * usdPerGram;
+  const hollowCostUsd = hollowGrams * usdPerGram;
+  const platePct = Math.min(100, ((sx * sy) / (W * D)) * 100);
+
+  return {
+    layers,
+    printMinutes,
+    printTimeLabel,
+    solidMl,
+    hollowMl,
+    solidGrams,
+    hollowGrams,
+    solidCostUsd,
+    hollowCostUsd,
+    recommendHollow,
+    platePct,
+  };
+}
+
+/**
+ * Non-destructively orient (Z-spin + X-tilt for MSLA peel-force reduction) and rescale a triangle soup,
+ * re-centering X/Y on (0,0) and grounding minZ = 0.00 mm on the Saturn 3 build plate.
+ */
+function transformMeshTriangles(
+  rawTris,
+  { tiltDeg = 0, rotZDeg = 0, targetMm = null } = {},
+) {
+  if (!rawTris || !rawTris.length) {
+    return { tris: new Float32Array(0), bbox: null, scaleFactor: 1 };
+  }
+  const n = rawTris.length;
+  const out = new Float32Array(n);
+  const radZ = (rotZDeg * Math.PI) / 180;
+  const cz = Math.cos(radZ),
+    sz = Math.sin(radZ);
+  const radX = (tiltDeg * Math.PI) / 180;
+  const cx = Math.cos(radX),
+    sx = Math.sin(radX);
+
+  // Measure raw longest horizontal/overall span first if targetMm rescaling is requested
+  let scaleFactor = 1;
+  if (targetMm && targetMm > 0) {
+    let rMinX = Infinity,
+      rMinY = Infinity,
+      rMinZ = Infinity;
+    let rMaxX = -Infinity,
+      rMaxY = -Infinity,
+      rMaxZ = -Infinity;
+    for (let i = 0; i < n; i += 3) {
+      const x = rawTris[i],
+        y = rawTris[i + 1],
+        z = rawTris[i + 2];
+      if (x < rMinX) rMinX = x;
+      if (x > rMaxX) rMaxX = x;
+      if (y < rMinY) rMinY = y;
+      if (y > rMaxY) rMaxY = y;
+      if (z < rMinZ) rMinZ = z;
+      if (z > rMaxZ) rMaxZ = z;
+    }
+    const maxSpan = Math.max(rMaxX - rMinX, rMaxY - rMinY, rMaxZ - rMinZ, 1e-6);
+    scaleFactor = targetMm / maxSpan;
+  }
+
+  let minX = Infinity,
+    minY = Infinity,
+    minZ = Infinity;
+  let maxX = -Infinity,
+    maxY = -Infinity,
+    maxZ = -Infinity;
+
+  for (let i = 0; i < n; i += 3) {
+    const x0 = rawTris[i] * scaleFactor;
+    const y0 = rawTris[i + 1] * scaleFactor;
+    const z0 = rawTris[i + 2] * scaleFactor;
+    // 1. Rotate about Z
+    const x1 = x0 * cz - y0 * sz;
+    const y1 = x0 * sz + y0 * cz;
+    const z1 = z0;
+    // 2. Tilt about X (resin peel-force angle)
+    const x2 = x1;
+    const y2 = y1 * cx - z1 * sx;
+    const z2 = y1 * sx + z1 * cx;
+
+    out[i] = x2;
+    out[i + 1] = y2;
+    out[i + 2] = z2;
+    if (x2 < minX) minX = x2;
+    if (x2 > maxX) maxX = x2;
+    if (y2 < minY) minY = y2;
+    if (y2 > maxY) maxY = y2;
+    if (z2 < minZ) minZ = z2;
+    if (z2 > maxZ) maxZ = z2;
+  }
+
+  const shiftX = -0.5 * (minX + maxX);
+  const shiftY = -0.5 * (minY + maxY);
+  const shiftZ = -minZ;
+  for (let i = 0; i < n; i += 3) {
+    out[i] += shiftX;
+    out[i + 1] += shiftY;
+    out[i + 2] += shiftZ;
+  }
+
+  const bbox = {
+    min: [minX + shiftX, minY + shiftY, 0],
+    max: [maxX + shiftX, maxY + shiftY, maxZ + shiftZ],
+    size: [maxX - minX, maxY - minY, maxZ - minZ],
+  };
+  return { tris: out, bbox, scaleFactor };
+}
+
 // --- stl.js ---
 
 function concatTriangles(list) {
@@ -2383,18 +2959,70 @@ const cssVar = (name, fallback) => {
   return v || fallback;
 };
 
+const RESIN_PRESETS = {
+  clay: {
+    baseHex: 0xb4bcc8,
+    roughness: 0.44,
+    metalness: 0.06,
+    clearcoat: 0.08,
+    clearcoatRoughness: 0.45,
+    opacity: 1.0,
+    transparent: false,
+  },
+  aqua8k: {
+    baseHex: 0x5d8aa8,
+    roughness: 0.22,
+    metalness: 0.08,
+    clearcoat: 0.68,
+    clearcoatRoughness: 0.16,
+    opacity: 1.0,
+    transparent: false,
+  },
+  emerald: {
+    baseHex: 0x10b981,
+    roughness: 0.12,
+    metalness: 0.02,
+    clearcoat: 0.92,
+    clearcoatRoughness: 0.08,
+    opacity: 0.84,
+    transparent: true,
+  },
+  obsidian: {
+    baseHex: 0x2a2f3a,
+    roughness: 0.32,
+    metalness: 0.22,
+    clearcoat: 0.38,
+    clearcoatRoughness: 0.24,
+    opacity: 1.0,
+    transparent: false,
+  },
+  overhang: {
+    baseHex: 0x7b8494,
+    roughness: 0.42,
+    metalness: 0.04,
+    clearcoat: 0.05,
+    clearcoatRoughness: 0.5,
+    opacity: 1.0,
+    transparent: false,
+  },
+};
+
 /**
- * Compute crease-angle vertex normals AND Ridge/Valley curvature cavity vertex colors:
- * - Smoothly blends normals across micro-facets where dihedral angle < creaseDeg (28 deg)
- * - Preserves razor-sharp hard edges on rafters, window frames, roof eaves & creases (>= 28 deg)
- * - Computes local mean curvature (concave valley AO darkening + convex ridge highlighting)
- *   so recessed panel lines, vents, and architectural trim pop out with Blender Workbench / Meshy contrast.
+ * Compute crease-angle vertex normals, Ridge/Valley curvature cavity vertex colors,
+ * AND exact MSLA <45-deg overhang surface area statistics in one pass.
  */
-function computeCreaseNormalsAndCavity(pos, baseColorHex, cosCrease = 0.8829) {
+function computeCreaseNormalsAndCavity(
+  pos,
+  baseColorHex,
+  { cosCrease = 0.8829, shaderMode = 'clay' } = {},
+) {
   const nTris = pos.length / 9;
   const faceNormals = new Float32Array(nTris * 3);
   const centroids = new Float32Array(nTris * 3);
   const vertMap = new Map();
+
+  let totalMm2 = 0;
+  let overhangMm2 = 0;
 
   for (let t = 0; t < nTris; t++) {
     const o = t * 9;
@@ -2416,7 +3044,9 @@ function computeCreaseNormalsAndCavity(pos, baseColorHex, cosCrease = 0.8829) {
     let nx = uy * vz - uz * vy,
       ny = uz * vx - ux * vz,
       nz = ux * vy - uy * vx;
-    const len = Math.hypot(nx, ny, nz) || 1;
+    const crossLen = Math.hypot(nx, ny, nz);
+    const area = crossLen * 0.5;
+    const len = crossLen || 1;
     nx /= len;
     ny /= len;
     nz /= len;
@@ -2424,9 +3054,16 @@ function computeCreaseNormalsAndCavity(pos, baseColorHex, cosCrease = 0.8829) {
     faceNormals[fn] = nx;
     faceNormals[fn + 1] = ny;
     faceNormals[fn + 2] = nz;
+    const czAvg = (az + bz + cz) * 0.3333333;
     centroids[fn] = (ax + bx + cx) * 0.3333333;
     centroids[fn + 1] = (ay + by + cy) * 0.3333333;
-    centroids[fn + 2] = (az + bz + cz) * 0.3333333;
+    centroids[fn + 2] = czAvg;
+
+    totalMm2 += area;
+    // Downward-facing surfaces above build plate (z > 0.25 mm) steeper than 45 deg (nz < -0.707) need supports
+    if (czAvg > 0.25 && nz < -0.68) {
+      overhangMm2 += area;
+    }
 
     for (let k = 0; k < 3; k++) {
       const vo = o + k * 3;
@@ -2443,6 +3080,7 @@ function computeCreaseNormalsAndCavity(pos, baseColorHex, cosCrease = 0.8829) {
   const br = ((baseColorHex >> 16) & 255) / 255;
   const bg = ((baseColorHex >> 8) & 255) / 255;
   const bb = (baseColorHex & 255) / 255;
+  const ridgeBoost = shaderMode === 'obsidian' ? 0.85 : 0.42;
 
   const normals = new Float32Array(pos.length);
   const colors = new Float32Array(pos.length);
@@ -2457,7 +3095,8 @@ function computeCreaseNormalsAndCavity(pos, baseColorHex, cosCrease = 0.8829) {
       tcz = centroids[fn + 2];
     for (let k = 0; k < 3; k++) {
       const vo = o + k * 3;
-      const key = `${Math.round(pos[vo] * 200)},${Math.round(pos[vo + 1] * 200)},${Math.round(pos[vo + 2] * 200)}`;
+      const vz = pos[vo + 2];
+      const key = `${Math.round(pos[vo] * 200)},${Math.round(pos[vo + 1] * 200)},${Math.round(vz * 200)}`;
       const adj = vertMap.get(key);
       let sx = 0,
         sy = 0,
@@ -2483,7 +3122,6 @@ function computeCreaseNormalsAndCavity(pos, baseColorHex, cosCrease = 0.8829) {
               dz = centroids[ofn + 2] - tcz;
             const dl = Math.hypot(dx, dy, dz);
             if (dl > 1e-5) {
-              // bend > 0 => concave valley (darken); bend < 0 => convex ridge (highlight)
               const bend = (dx * tnx + dy * tny + dz * tnz) / dl;
               const weight = Math.min(1.0, Math.sqrt(Math.max(0, 1 - dot)));
               curvSum += bend * weight;
@@ -2505,22 +3143,45 @@ function computeCreaseNormalsAndCavity(pos, baseColorHex, cosCrease = 0.8829) {
       if (curvCnt > 0) {
         const avgCurv = curvSum / curvCnt;
         if (avgCurv > 0.01) {
-          // Concave valley / crevice ambient occlusion
-          shade = Math.max(0.52, 1.0 - avgCurv * 1.35);
+          shade = Math.max(0.48, 1.0 - avgCurv * 1.38);
         } else if (avgCurv < -0.01) {
-          // Convex ridge highlight
-          shade = Math.min(1.14, 1.0 - avgCurv * 0.42);
+          shade = Math.min(1.28, 1.0 - avgCurv * ridgeBoost);
         }
       }
-      colors[vo] = Math.min(1, br * shade);
-      colors[vo + 1] = Math.min(1, bg * shade);
-      colors[vo + 2] = Math.min(1, bb * shade);
+
+      if (shaderMode === 'overhang') {
+        if (vz <= 0.22 && tnz < -0.5) {
+          // Grounded directly on Saturn 3 build plate -> emerald safe contact
+          colors[vo] = Math.min(1, 0.14 * shade);
+          colors[vo + 1] = Math.min(1, 0.78 * shade);
+          colors[vo + 2] = Math.min(1, 0.42 * shade);
+        } else if (vz > 0.22 && tnz < -0.7) {
+          // Critical overhang / island (<45 deg) -> crimson support alert
+          colors[vo] = Math.min(1, 0.96 * shade);
+          colors[vo + 1] = Math.min(1, 0.22 * shade);
+          colors[vo + 2] = Math.min(1, 0.24 * shade);
+        } else if (vz > 0.22 && tnz < -0.42) {
+          // Marginal overhang (45-65 deg) -> warm amber caution
+          colors[vo] = Math.min(1, 0.96 * shade);
+          colors[vo + 1] = Math.min(1, 0.64 * shade);
+          colors[vo + 2] = Math.min(1, 0.12 * shade);
+        } else {
+          // Self-supporting wall / upward surface
+          colors[vo] = Math.min(1, br * shade);
+          colors[vo + 1] = Math.min(1, bg * shade);
+          colors[vo + 2] = Math.min(1, bb * shade);
+        }
+      } else {
+        colors[vo] = Math.min(1, br * shade);
+        colors[vo + 1] = Math.min(1, bg * shade);
+        colors[vo + 2] = Math.min(1, bb * shade);
+      }
     }
   }
-  return { normals, colors };
+  return { normals, colors, totalMm2, overhangMm2 };
 }
 
-/** Three.js viewport with a true-size Saturn 3 plate. Returns null when THREE or WebGL is missing. */
+/** Three.js viewport with a true-size Saturn 3 plate, 405nm UV X-Ray Slicer, and Resin Shaders. */
 function createViewport(canvas, { onSelect = (_id) => {} } = {}) {
   if (typeof THREE === 'undefined') return null;
   let renderer;
@@ -2535,43 +3196,85 @@ function createViewport(canvas, { onSelect = (_id) => {} } = {}) {
     return null;
   }
   renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+  renderer.localClippingEnabled = true;
+  if (THREE.ACESFilmicToneMapping !== undefined) {
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.06;
+  }
+
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(40, 1, 1, 6000);
+  const camera = new THREE.PerspectiveCamera(38, 1, 1, 6000);
   camera.up.set(0, 0, 1);
   const target = new THREE.Vector3(0, 0, 30);
-  let theta = -0.9,
-    phi = 1.05,
+  let theta = -0.92,
+    phi = 1.06,
     dist = 420,
-    needsRender = true;
-  // High-contrast 3-point studio clay lighting (matching Meshy crisp crevice shading)
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x1e2024, 0.36));
-  const keyLight = new THREE.DirectionalLight(0xfffdf8, 1.32);
+    needsRender = true,
+    turntable = false,
+    shaderMode = 'clay',
+    sliceRatio = 1.0,
+    sliceMaxZ = 100,
+    cachedItems = [],
+    cachedSelectedId = null,
+    overhangStats = { overhangPct: 0, overhangMm2: 0, totalMm2: 0 };
+
+  // 4-point optical darkroom studio rig
+  scene.add(new THREE.HemisphereLight(0xf4f7ff, 0x14171f, 0.42));
+  const keyLight = new THREE.DirectionalLight(0xfffcf5, 1.38);
   keyLight.position.set(220, -280, 390);
   scene.add(keyLight);
-  const rimLight = new THREE.DirectionalLight(0xdce6ff, 0.55);
+  const rimLight = new THREE.DirectionalLight(0xa5b4fc, 0.68);
   rimLight.position.set(-260, 250, 240);
   scene.add(rimLight);
-  const fillLight = new THREE.DirectionalLight(0xffffff, 0.28);
+  const fillLight = new THREE.DirectionalLight(0xe0f2fe, 0.34);
   fillLight.position.set(-220, -180, 110);
   scene.add(fillLight);
 
   const [W, D, H] = SATURN3.build;
   const plateMat = new THREE.MeshBasicMaterial({
     transparent: true,
-    opacity: 0.25,
+    opacity: 0.34,
     side: THREE.DoubleSide,
   });
   const plate = new THREE.Mesh(new THREE.PlaneGeometry(W, D), plateMat);
-  plate.position.z = -0.02;
+  plate.position.z = -0.04;
   scene.add(plate);
-  const gridPts = [];
-  for (let x = -W / 2; x <= W / 2 + 1e-6; x += 10) gridPts.push(x, -D / 2, 0, x, D / 2, 0);
-  for (let y = -D / 2; y <= D / 2 + 1e-6; y += 10) gridPts.push(-W / 2, y, 0, W / 2, y, 0);
-  const gridGeo = new THREE.BufferGeometry();
-  gridGeo.setAttribute('position', new THREE.Float32BufferAttribute(gridPts, 3));
-  const gridMat = new THREE.LineBasicMaterial({ transparent: true, opacity: 0.5 });
-  scene.add(new THREE.LineSegments(gridGeo, gridMat));
-  const ghostMat = new THREE.LineBasicMaterial({ transparent: true, opacity: 0.35 });
+
+  // Minor 10mm + Major 50mm reticle grid
+  const minorPts = [];
+  const majorPts = [];
+  for (let x = -W / 2; x <= W / 2 + 1e-6; x += 10) {
+    const bucket = Math.abs(Math.round(x) % 50) === 0 ? majorPts : minorPts;
+    bucket.push(x, -D / 2, 0, x, D / 2, 0);
+  }
+  for (let y = -D / 2; y <= D / 2 + 1e-6; y += 10) {
+    const bucket = Math.abs(Math.round(y) % 50) === 0 ? majorPts : minorPts;
+    bucket.push(-W / 2, y, 0, W / 2, y, 0);
+  }
+  const minorGeo = new THREE.BufferGeometry();
+  minorGeo.setAttribute('position', new THREE.Float32BufferAttribute(minorPts, 3));
+  const gridMat = new THREE.LineBasicMaterial({ transparent: true, opacity: 0.28 });
+  scene.add(new THREE.LineSegments(minorGeo, gridMat));
+
+  const majorGeo = new THREE.BufferGeometry();
+  majorGeo.setAttribute('position', new THREE.Float32BufferAttribute(majorPts, 3));
+  const majorMat = new THREE.LineBasicMaterial({ transparent: true, opacity: 0.58 });
+  scene.add(new THREE.LineSegments(majorGeo, majorMat));
+
+  // Front build-plate orientation bar (Saturn 3 vat front edge)
+  const frontBarGeo = new THREE.BufferGeometry();
+  frontBarGeo.setAttribute(
+    'position',
+    new THREE.Float32BufferAttribute([-W * 0.28, -D / 2, 0.06, W * 0.28, -D / 2, 0.06], 3),
+  );
+  const frontBarMat = new THREE.LineBasicMaterial({
+    color: 0xf59e0b,
+    transparent: true,
+    opacity: 0.85,
+  });
+  scene.add(new THREE.LineSegments(frontBarGeo, frontBarMat));
+
+  const ghostMat = new THREE.LineBasicMaterial({ transparent: true, opacity: 0.22 });
   const ghost = new THREE.LineSegments(
     new THREE.EdgesGeometry(new THREE.BoxGeometry(W, D, H)),
     ghostMat,
@@ -2579,51 +3282,169 @@ function createViewport(canvas, { onSelect = (_id) => {} } = {}) {
   ghost.position.z = H / 2;
   scene.add(ghost);
 
+  // 405nm UV Laser Slicer Clipping Plane & Optical LCD Plane
+  const clipPlane = new THREE.Plane(new THREE.Vector3(0, 0, -1), 1e6);
+  const uvLaserGroup = new THREE.Group();
+  uvLaserGroup.visible = false;
+  const uvPlaneMat = new THREE.MeshBasicMaterial({
+    color: 0xa855f7,
+    transparent: true,
+    opacity: 0.14,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  const uvPlaneMesh = new THREE.Mesh(new THREE.PlaneGeometry(W, D), uvPlaneMat);
+  uvLaserGroup.add(uvPlaneMesh);
+  const uvBorderEdges = new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.PlaneGeometry(W, D)),
+    new THREE.LineBasicMaterial({ color: 0xc084fc, transparent: true, opacity: 0.92 }),
+  );
+  uvLaserGroup.add(uvBorderEdges);
+  scene.add(uvLaserGroup);
+
   const group = new THREE.Group();
+  const capGroup = new THREE.Group();
   scene.add(group);
-  const colors = { base: 0x8a8f99, accent: 0xd98c1f, failed: 0xb3261e };
+  scene.add(capGroup);
+
+  const colors = { base: 0xb4bcc8, accent: 0xf59e0b, failed: 0xef4444 };
   function setTheme() {
     const hex = (v) => parseInt(v.replace('#', ''), 16);
-    plateMat.color.setHex(hex(cssVar('--plate', '#9aa0a6')));
-    gridMat.color.setHex(hex(cssVar('--grid', '#9aa0a6')));
-    ghostMat.color.setHex(hex(cssVar('--grid', '#9aa0a6')));
-    colors.base = hex(cssVar('--part', '#8a8f99'));
-    colors.accent = hex(cssVar('--accent', '#d98c1f'));
-    colors.failed = hex(cssVar('--red', '#b3261e'));
+    plateMat.color.setHex(hex(cssVar('--plate', '#252932')));
+    gridMat.color.setHex(hex(cssVar('--grid', '#4b5262')));
+    majorMat.color.setHex(hex(cssVar('--grid-major', '#6b7488')));
+    ghostMat.color.setHex(hex(cssVar('--grid', '#4b5262')));
+    colors.base = hex(cssVar('--part', '#b4bcc8'));
+    colors.accent = hex(cssVar('--accent', '#f59e0b'));
+    colors.failed = hex(cssVar('--red', '#ef4444'));
     needsRender = true;
   }
-  function setItems(items, selectedId) {
-    for (const m of [...group.children]) {
-      group.remove(m);
-      m.geometry.dispose();
-      m.material.dispose();
+
+  function clearGroup(g) {
+    for (const m of [...g.children]) {
+      g.remove(m);
+      if (m.geometry) m.geometry.dispose();
+      if (m.material) m.material.dispose();
     }
-    for (const it of items) {
+  }
+
+  function updateSliceVisuals() {
+    if (sliceRatio >= 0.999) {
+      clipPlane.constant = 1e6;
+      uvLaserGroup.visible = false;
+      capGroup.visible = false;
+    } else {
+      const zCut = Math.max(0.05, sliceRatio * Math.max(0.5, sliceMaxZ));
+      clipPlane.constant = zCut;
+      uvLaserGroup.position.z = zCut;
+      uvLaserGroup.visible = true;
+      capGroup.visible = true;
+    }
+    needsRender = true;
+  }
+
+  function rebuildMeshes() {
+    clearGroup(group);
+    clearGroup(capGroup);
+    const preset = RESIN_PRESETS[shaderMode] || RESIN_PRESETS.clay;
+    let sumTotal = 0,
+      sumOverhang = 0,
+      maxZ = 1;
+
+    for (const it of cachedItems) {
+      if (it.bbox?.max?.[2] > maxZ) maxZ = it.bbox.max[2];
       const geo = new THREE.BufferGeometry();
       const posArr = Float32Array.from(it.tris);
       const baseHex = it.failed
         ? colors.failed
-        : it.part.id === selectedId
+        : it.part.id === cachedSelectedId
           ? colors.accent
-          : colors.base;
-      const { normals, colors: vColors } = computeCreaseNormalsAndCavity(posArr, baseHex);
+          : shaderMode === 'clay'
+            ? colors.base
+            : preset.baseHex;
+      const {
+        normals,
+        colors: vColors,
+        totalMm2,
+        overhangMm2,
+      } = computeCreaseNormalsAndCavity(posArr, baseHex, { shaderMode });
+      sumTotal += totalMm2;
+      sumOverhang += overhangMm2;
+
       geo.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
       geo.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
       geo.setAttribute('color', new THREE.BufferAttribute(vColors, 3));
-      const mesh = new THREE.Mesh(
-        geo,
-        new THREE.MeshStandardMaterial({
-          color: 0xffffff,
-          vertexColors: true,
-          roughness: 0.48,
-          metalness: 0.05,
-        }),
-      );
+
+      const MatCtor = THREE.MeshPhysicalMaterial || THREE.MeshStandardMaterial;
+      const matOpts = {
+        color: 0xffffff,
+        vertexColors: true,
+        roughness: preset.roughness,
+        metalness: preset.metalness,
+        transparent: preset.transparent,
+        opacity: preset.opacity,
+        clippingPlanes: [clipPlane],
+        clipShadows: true,
+      };
+      if (THREE.MeshPhysicalMaterial) {
+        matOpts.clearcoat = preset.clearcoat;
+        matOpts.clearcoatRoughness = preset.clearcoatRoughness;
+      }
+      const mesh = new THREE.Mesh(geo, new MatCtor(matOpts));
       mesh.userData.id = it.part.id;
       group.add(mesh);
+
+      // 405nm UV glowing interior cross-section cap when Z-slicer clips the watertight solid
+      const capMesh = new THREE.Mesh(
+        geo.clone(),
+        new THREE.MeshBasicMaterial({
+          color: 0xb453f8,
+          side: THREE.BackSide,
+          clippingPlanes: [clipPlane],
+        }),
+      );
+      capGroup.add(capMesh);
     }
+
+    sliceMaxZ = maxZ;
+    overhangStats = {
+      overhangPct: sumTotal > 0 ? (sumOverhang / sumTotal) * 100 : 0,
+      overhangMm2: sumOverhang,
+      totalMm2: sumTotal,
+    };
+    updateSliceVisuals();
     needsRender = true;
   }
+
+  function setItems(items, selectedId) {
+    cachedItems = items || [];
+    cachedSelectedId = selectedId;
+    rebuildMeshes();
+  }
+
+  function setShaderMode(mode) {
+    if (!RESIN_PRESETS[mode] || mode === shaderMode) return overhangStats;
+    shaderMode = mode;
+    rebuildMeshes();
+    return overhangStats;
+  }
+
+  function setSliceRatio(ratio, explicitMaxZ) {
+    sliceRatio = Math.max(0, Math.min(1, Number(ratio)));
+    if (explicitMaxZ && explicitMaxZ > 0) sliceMaxZ = explicitMaxZ;
+    updateSliceVisuals();
+  }
+
+  function setTurntable(enabled) {
+    turntable = Boolean(enabled);
+    if (turntable) needsRender = true;
+    return turntable;
+  }
+
+  function getOverhangStats() {
+    return overhangStats;
+  }
+
   function updateCamera() {
     camera.position.set(
       target.x + dist * Math.sin(phi) * Math.cos(theta),
@@ -2631,7 +3452,6 @@ function createViewport(canvas, { onSelect = (_id) => {} } = {}) {
       target.z + dist * Math.cos(phi),
     );
     camera.lookAt(target);
-    // Keep 3-point studio lights locked relative to viewer camera angle so every orbit side is crisply lit
     const kPhi = Math.max(0.18, phi - 0.42),
       kTheta = theta + 0.58;
     keyLight.position.set(
@@ -2655,6 +3475,7 @@ function createViewport(canvas, { onSelect = (_id) => {} } = {}) {
     );
     needsRender = true;
   }
+
   function fit(bbox) {
     if (!bbox) return;
     target.set(
@@ -2662,9 +3483,10 @@ function createViewport(canvas, { onSelect = (_id) => {} } = {}) {
       (bbox.min[1] + bbox.max[1]) / 2,
       (bbox.min[2] + bbox.max[2]) / 2,
     );
-    dist = Math.max(...bbox.size) * 1.9 + 40;
+    dist = Math.max(...bbox.size) * 1.85 + 38;
     updateCamera();
   }
+
   function view(name) {
     if (name === 'top') {
       theta = -Math.PI / 2;
@@ -2673,11 +3495,12 @@ function createViewport(canvas, { onSelect = (_id) => {} } = {}) {
       theta = -Math.PI / 2;
       phi = Math.PI / 2 - 0.001;
     } else {
-      theta = -0.9;
-      phi = 1.05;
+      theta = -0.92;
+      phi = 1.06;
     }
     updateCamera();
   }
+
   function resize() {
     const w = canvas.clientWidth || 300,
       h = canvas.clientHeight || 300;
@@ -2686,6 +3509,7 @@ function createViewport(canvas, { onSelect = (_id) => {} } = {}) {
     camera.updateProjectionMatrix();
     needsRender = true;
   }
+
   let down = null,
     moved = false;
   canvas.addEventListener('pointerdown', (e) => {
@@ -2738,27 +3562,38 @@ function createViewport(canvas, { onSelect = (_id) => {} } = {}) {
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   new ResizeObserver(resize).observe(canvas.parentElement);
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', setTheme);
-  function loop() {
+
+  let lastTs = performance.now();
+  function loop(now = performance.now()) {
+    const dt = Math.min(0.05, (now - lastTs) / 1000);
+    lastTs = now;
+    if (turntable && !down) {
+      theta -= dt * 0.55;
+      updateCamera();
+    }
     if (needsRender) {
       renderer.render(scene, camera);
       needsRender = false;
     }
     requestAnimationFrame(loop);
   }
+
   async function captureFourViews(bbox) {
     try {
       const savedTheta = theta,
-        savedPhi = phi;
+        savedPhi = phi,
+        savedRatio = sliceRatio;
+      setSliceRatio(1.0);
       if (bbox) fit(bbox);
       const out = document.createElement('canvas');
       out.width = 640;
       out.height = 640;
       const ctx = out.getContext('2d');
       if (!ctx) return null;
-      ctx.fillStyle = '#17181a';
+      ctx.fillStyle = '#111318';
       ctx.fillRect(0, 0, 640, 640);
       const angles = [
-        { t: -0.9, p: 1.05, x: 0, y: 0, label: '3/4 ISO' },
+        { t: -0.92, p: 1.06, x: 0, y: 0, label: '3/4 ISO' },
         { t: -Math.PI / 2, p: Math.PI / 2 - 0.01, x: 320, y: 0, label: 'FRONT / SIDE' },
         { t: 0, p: Math.PI / 2 - 0.01, x: 0, y: 320, label: 'PROFILE' },
         { t: -Math.PI / 2, p: 0.01, x: 320, y: 320, label: 'TOP' },
@@ -2769,12 +3604,13 @@ function createViewport(canvas, { onSelect = (_id) => {} } = {}) {
         updateCamera();
         renderer.render(scene, camera);
         ctx.drawImage(canvas, a.x, a.y, 320, 320);
-        ctx.fillStyle = '#e0912a';
+        ctx.fillStyle = '#f59e0b';
         ctx.font = '12px sans-serif';
         ctx.fillText(a.label, a.x + 8, a.y + 18);
       }
       theta = savedTheta;
       phi = savedPhi;
+      setSliceRatio(savedRatio);
       updateCamera();
       renderer.render(scene, camera);
       const blob = await new Promise((res) => out.toBlob(res, 'image/jpeg', 0.85));
@@ -2783,11 +3619,23 @@ function createViewport(canvas, { onSelect = (_id) => {} } = {}) {
       return null;
     }
   }
+
   setTheme();
   resize();
   updateCamera();
   loop();
-  return { setItems, fit, view, resize, setTheme, captureFourViews };
+  return {
+    setItems,
+    fit,
+    view,
+    resize,
+    setTheme,
+    captureFourViews,
+    setShaderMode,
+    setSliceRatio,
+    setTurntable,
+    getOverhangStats,
+  };
 }
 
 // --- app.js ---
@@ -2806,6 +3654,9 @@ const state = {
   mode: 'forge',
   forgeReady: false,
   forgeMesh: null,
+  meshTransform: { tiltDeg: 0, rotZDeg: 0, targetMm: null },
+  turntable: false,
+  uvScanAnim: null,
   lastBlenderCode: null,
   project: null,
   unsavedRevisions: [],
@@ -2884,7 +3735,7 @@ function setMode(nextMode) {
     note('Organic/Sculpt track: Step 0 Studio Prep -> Hunyuan3D 2.1 (512 octree) -> AlienPC STL.');
   } else if (state.mode === 'blender') {
     note(
-      'Hard-Surface CAD track: OAuth Sonnet 5.5 / GPT-6.1-Sol writes exact Blender 4.3 bpy CAD (zero voxel remeshing).',
+      'Hard-Surface CAD track: OAuth Opus 5.5 / GPT-6.1-Sol writes exact Blender 4.3 bpy CAD (zero voxel remeshing).',
     );
   } else if (!imageLimits) {
     note('Parametric Blocks track.');
@@ -2899,23 +3750,102 @@ function addChat(role, text) {
   d.scrollIntoView({ block: 'nearest' });
 }
 
+function updateUvSliceHud() {
+  const slider = /** @type {HTMLInputElement | null} */ ($('uvSliceRange'));
+  const readout = $('uvSliceReadout');
+  const bar = $('uvSlicerBar');
+  if (!slider || !readout) return;
+  const ratio = Number(slider.value) / 1000;
+  const sz = state.result?.bbox?.size?.[2] ?? 0;
+  const totalLayers = sz > 0 ? Math.max(1, Math.ceil(sz / (state.layerUm / 1000))) : 0;
+  viewport?.setSliceRatio(ratio, sz);
+  if (ratio >= 0.999 || totalLayers === 0) {
+    bar?.classList.remove('slicing');
+    readout.textContent =
+      totalLayers > 0 ? `FULL MESH • ${totalLayers.toLocaleString()} LAYERS` : 'FULL MESH • Z X-RAY READY';
+  } else {
+    bar?.classList.add('slicing');
+    const curLayer = Math.max(1, Math.round(ratio * totalLayers));
+    const curZ = (ratio * sz).toFixed(1);
+    readout.textContent = `405nm X-RAY • L${curLayer}/${totalLayers} (${curZ} mm)`;
+  }
+}
+
+function updateTelemetryCards() {
+  const tel = estimateSaturn3Telemetry(state.result?.bbox, state.result?.volumeMm3 ?? 0, {
+    layerUm: state.layerUm,
+  });
+  const ov = viewport?.getOverhangStats?.() ?? { overhangPct: 0, overhangMm2: 0 };
+  if ($('telTime')) $('telTime').textContent = tel.printTimeLabel;
+  if ($('telTimeSub'))
+    $('telTimeSub').textContent =
+      tel.platePct > 0 ? `${tel.platePct.toFixed(1)}% of Saturn 3 plate` : 'Elegoo Saturn 3 12K';
+  if ($('telCost')) {
+    $('telCost').textContent =
+      tel.solidMl > 0
+        ? tel.recommendHollow
+          ? `${tel.hollowCostUsd.toFixed(2)}`
+          : `${tel.solidCostUsd.toFixed(2)}`
+        : '—';
+  }
+  if ($('telCostSub')) {
+    $('telCostSub').textContent =
+      tel.solidMl > 0
+        ? tel.recommendHollow
+          ? `${Math.round(tel.hollowGrams)}g hollow (${tel.solidCostUsd.toFixed(2)} solid)`
+          : `${Math.round(tel.solidGrams)}g (${tel.solidMl.toFixed(1)} mL)`
+        : '8K Photopolymer';
+  }
+  if ($('telLayers'))
+    $('telLayers').textContent = tel.layers > 0 ? tel.layers.toLocaleString() : '—';
+  if ($('telLayersSub'))
+    $('telLayersSub').textContent = `${state.layerUm} µm Z • 19×24 µm XY`;
+  if ($('telOverhang')) {
+    $('telOverhang').textContent =
+      state.result?.bbox ? `${ov.overhangPct.toFixed(1)}%` : '—';
+    $('telOverhang').style.color =
+      ov.overhangPct > 18 ? 'var(--amber)' : ov.overhangPct > 0 ? 'var(--fg)' : 'var(--green)';
+  }
+  if ($('telOverhangSub')) {
+    $('telOverhangSub').textContent =
+      ov.overhangPct > 18
+        ? 'Add medium supports in Chitubox'
+        : ov.overhangPct > 2
+          ? 'Light tree supports advised'
+          : 'Minimal overhang stress';
+  }
+  updateUvSliceHud();
+}
+
 // ---------- render ----------
 function render() {
   if (state.forgeMesh) {
     const fm = state.forgeMesh;
     const failed = !fm.manifold?.ok;
+    const rawTris = fm.rawTris || fm.tris;
+    const { tris, bbox, scaleFactor } = transformMeshTriangles(rawTris, state.meshTransform);
+    const baseVolMm3 = fm.rawVolumeMm3 ?? fm.volumeMm3 ?? 0;
+    const scaledVolMm3 = baseVolMm3 * Math.pow(scaleFactor, 3);
+    const scaledVolMl = Number((scaledVolMm3 / 1000).toFixed(2));
+
     state.items = [
       {
         part: { id: 'forge_mesh', type: 'mesh' },
-        tris: fm.tris,
-        bbox: fm.bbox,
+        tris,
+        bbox: bbox || fm.bbox,
         failed,
         failure: fm.manifold?.errors?.[0] ?? null,
       },
     ];
-    state.result = runMeshPrintChecks(fm.bbox, fm.volumeMm3, !failed, { layerUm: state.layerUm });
+    state.result = runMeshPrintChecks(bbox || fm.bbox, scaledVolMm3, !failed, {
+      layerUm: state.layerUm,
+    });
     viewport?.setItems(state.items, null);
     $('partsTableWrap')?.classList.add('hidden');
+    $('orientDeck')?.classList.remove('hidden');
+    if ($('orientLabel')) {
+      $('orientLabel').textContent = `${state.meshTransform.tiltDeg}° tilt • ${state.meshTransform.rotZDeg}° Z`;
+    }
     const sum = $('forgeSummary');
     if (sum) {
       sum.classList.remove('hidden');
@@ -2924,7 +3854,8 @@ function render() {
         stlTris && stlTris > fm.triangleCount
           ? `${Number(stlTris).toLocaleString()} STL tris (${fm.triangleCount.toLocaleString()} preview)`
           : `${fm.triangleCount.toLocaleString()} tris`;
-      sum.textContent = `Hunyuan3D mesh: ${triLabel} | ${fm.volumeMl} mL | AlienPC STL: ${fm.stlPath}`;
+      const engineTag = fm.qualityMetrics?.pythonCode ? 'Blender 4.3 CAD' : 'Hunyuan3D 2.1';
+      sum.textContent = `${engineTag}: ${triLabel} | ${scaledVolMl} mL | AlienPC STL: ${fm.stlPath}`;
     }
     renderChecks(failed);
     $('assumptions').classList.add('hidden');
@@ -2937,10 +3868,12 @@ function render() {
       : '';
     const canExportMesh = !failed && !!caps.downloads && fm.preview?.isFullMesh !== false;
     $('exportBtn').disabled = !canExportMesh;
-    $('exportNote').textContent = fm.stlPath ? `Saved on AlienPC: ${fm.stlPath}` : '';
+    $('exportNote').textContent = fm.stlPath ? `AlienPC: ${fm.stlPath}` : '';
+    updateTelemetryCards();
     return;
   }
 
+  $('orientDeck')?.classList.add('hidden');
   $('partsTableWrap')?.classList.remove('hidden');
   $('forgeSummary')?.classList.add('hidden');
   const list = state.project.current;
@@ -2969,6 +3902,7 @@ function render() {
   $('exportBtn').disabled = anyFailed || !caps.downloads;
   if (anyFailed)
     $('exportNote').textContent = 'Export is disabled until every part passes the geometry check.';
+  updateTelemetryCards();
 }
 
 function renderParts() {
@@ -3115,6 +4049,18 @@ function renderThumbs() {
     d.append(img, b);
     t.append(d);
   }
+  const pipWrap = $('refPipWrap');
+  const pipImg = /** @type {HTMLImageElement | null} */ ($('refPipImg'));
+  const firstPh = state.project.photos[0];
+  if (pipWrap && pipImg) {
+    if (firstPh) {
+      pipImg.src = firstPh.url || '/_blob/' + firstPh.assetId;
+      pipWrap.classList.remove('hidden');
+    } else {
+      pipImg.removeAttribute('src');
+      pipWrap.classList.add('hidden');
+    }
+  }
 }
 
 // ---------- model changes ----------
@@ -3201,7 +4147,62 @@ function addPhotos(files) {
 }
 
 // ---------- Mesh Forge & Standalone LAN Studio ----------
-const UI_VERSION = '4.0.4';
+const UI_VERSION = '5.0.0';
+const STARTER_BRIEFS = {
+  isd: {
+    mode: 'blender',
+    presetKey: 'star_destroyer_engines',
+    scaleMm: 120,
+    name: 'stardestroyer-engines-cad',
+    scaleRef: '120 mm longest side',
+    brief:
+      'Imperial Star Destroyer rear diamond-wedge engine baffle plate (120 mm wide x 32 mm tall) with raised perimeter armor bevel frame, 3 large concentric 64-segment heavy ion thrusters with 28 radial internal turbine cooling vanes, 4 secondary thrusters on stepped mounting plates with micro-capacitor greeble blocks, radial structural struts around the center thruster, and 7-slat wingtip cooling louver arrays on both sides.',
+  },
+  turret: {
+    mode: 'blender',
+    presetKey: 'scifi_turret_battery',
+    scaleMm: 85,
+    name: 'quad-turbolaser-turret-cad',
+    scaleRef: '85 mm longest side',
+    brief:
+      'Heavy sci-fi quad-barrel turbolaser turret battery on an octagonal armored rotating base with perimeter bolt flanges, twin elevated trunnion recoil housings, 4 concentric 64-segment stepped rifle barrels with muzzle flash suppressors and cooling jackets, top rangefinder optics pod, and rear heat-sink louver slats.',
+  },
+  mecha: {
+    mode: 'forge',
+    presetKey: '',
+    scaleMm: 75,
+    name: 'cyber-ronin-collectible-bust',
+    scaleRef: '75 mm longest side',
+    brief:
+      'Collectible 75mm resin display bust of an armored cybernetic Ronin warrior on a beveled octagonal plinth pedestal, layered horned kabuto helmet with crisp mechanical visor slit, braided throat guard collar plates, high-relief shoulder pauldrons, watertight solid forms suitable for 12K MSLA photopolymer printing.',
+  },
+};
+
+function stopUvScanAnim() {
+  if (state.uvScanAnim) {
+    cancelAnimationFrame(state.uvScanAnim);
+    state.uvScanAnim = null;
+  }
+  const btn = $('uvScanBtn');
+  if (btn) {
+    btn.classList.remove('active');
+    btn.textContent = '\u25B6 405nm UV Scan';
+  }
+}
+
+function resetMeshTransformUi() {
+  state.meshTransform = { tiltDeg: 0, rotZDeg: 0, targetMm: null };
+  const deck = $('orientDeck');
+  if (deck) {
+    deck.querySelectorAll('[data-tilt]').forEach((b) => {
+      b.classList.toggle('active', b.getAttribute('data-tilt') === '0');
+    });
+  }
+  $('rotZ90Btn')?.classList.remove('active');
+  stopUvScanAnim();
+  const slider = /** @type {HTMLInputElement | null} */ ($('uvSliceRange'));
+  if (slider) slider.value = '1000';
+}
 const CAD_PRESETS = {
   star_destroyer_engines: {
     name: 'stardestroyer-engines-cad',
@@ -3466,13 +4467,14 @@ async function restoreLatestForgeMeshIfAvailable({ onlyActive = false } = {}) {
     const job = res?.payload;
     if (job?.ok && job?.status === 'done' && job?.preview) {
       const tris = unpackForgePreview(job.preview);
-      state.forgeMesh = { ...job, tris };
+      resetMeshTransformUi();
+      state.forgeMesh = { ...job, tris, rawTris: tris, rawVolumeMm3: job.volumeMm3 };
       if (job.qualityMetrics?.pythonCode) {
         state.lastBlenderCode = job.qualityMetrics.pythonCode;
       }
       if (job.name) state.project.name = String(job.name).slice(0, META.name);
       render();
-      viewport?.fit(job.bbox);
+      viewport?.fit(state.result?.bbox || job.bbox);
     }
   } catch {
     /* ignore if no prior job exists */
@@ -3520,7 +4522,8 @@ async function pollForgeJobUntilDone(jobId, controller) {
     }
     if (job.status === 'done') {
       const tris = unpackForgePreview(job.preview);
-      state.forgeMesh = { ...job, tris };
+      resetMeshTransformUi();
+      state.forgeMesh = { ...job, tris, rawTris: tris, rawVolumeMm3: job.volumeMm3 };
       if (job.qualityMetrics?.pythonCode) {
         state.lastBlenderCode = job.qualityMetrics.pythonCode;
       }
@@ -3528,7 +4531,7 @@ async function pollForgeJobUntilDone(jobId, controller) {
       saveLastForgeMeta(job.jobId);
       saveCtl?.markChanged();
       render();
-      viewport?.fit(job.bbox);
+      viewport?.fit(state.result?.bbox || job.bbox);
       return job;
     }
   }
@@ -4243,6 +5246,7 @@ function installProject(project) {
   saveCtl?.dispose();
   state.inference?.controller.abort();
   partCache.clear();
+  resetMeshTransformUi();
   state.forgeMesh = null;
   state.lastBlenderCode = null;
   state.project = project;
@@ -4418,6 +5422,145 @@ async function init() {
   $('fitBtn').addEventListener('click', () => viewport?.fit(state.result?.bbox));
   for (const v of ['iso', 'top', 'front'])
     $(`${v}Btn`).addEventListener('click', () => viewport?.view(v));
+
+  // Theme switcher (Optical Darkroom <-> Daylight Studio)
+  const applyThemeUi = (theme) => {
+    const t = theme === 'light' ? 'light' : 'dark';
+    document.documentElement.dataset.theme = t;
+    if ($('themeBtn')) {
+      $('themeBtn').textContent = t === 'light' ? '\u263E Darkroom' : '\u2600 Light';
+    }
+    viewport?.setTheme();
+  };
+  try {
+    const savedTheme = localStorage.getItem('shapecast.theme');
+    if (savedTheme === 'light' || savedTheme === 'dark') applyThemeUi(savedTheme);
+  } catch {
+    /* ignore */
+  }
+  $('themeBtn')?.addEventListener('click', () => {
+    const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+    applyThemeUi(next);
+    try {
+      localStorage.setItem('shapecast.theme', next);
+    } catch {
+      /* ignore */
+    }
+  });
+
+  // Showroom turntable
+  $('spinBtn')?.addEventListener('click', () => {
+    state.turntable = Boolean(viewport?.setTurntable(!state.turntable));
+    $('spinBtn')?.classList.toggle('active', state.turntable);
+  });
+
+  // Real-time PBR Photopolymer Resin Shaders & Support Overhang Radar
+  $('shaderBar')?.addEventListener('click', (e) => {
+    const btn = /** @type {HTMLElement} */ (e.target).closest('button[data-shader]');
+    if (!btn) return;
+    const mode = btn.getAttribute('data-shader') || 'clay';
+    viewport?.setShaderMode(mode);
+    $('shaderBar')
+      ?.querySelectorAll('button[data-shader]')
+      .forEach((b) => b.classList.toggle('active', b === btn));
+    updateTelemetryCards();
+  });
+
+  // 405nm UV Z-Layer X-Ray Scrubber & Animated Curing Sweep
+  $('uvSliceRange')?.addEventListener('input', () => {
+    stopUvScanAnim();
+    updateUvSliceHud();
+  });
+  $('uvScanBtn')?.addEventListener('click', () => {
+    if (state.uvScanAnim) {
+      stopUvScanAnim();
+      return;
+    }
+    const slider = /** @type {HTMLInputElement | null} */ ($('uvSliceRange'));
+    const btn = $('uvScanBtn');
+    if (!slider || !btn) return;
+    btn.classList.add('active');
+    btn.textContent = '\u23F8 Pause Scan';
+    const startTs = performance.now();
+    const durationMs = 4200;
+    const step = (now) => {
+      const p = Math.min(1, (now - startTs) / durationMs);
+      slider.value = String(Math.round(25 + p * 975));
+      updateUvSliceHud();
+      if (p < 1) {
+        state.uvScanAnim = requestAnimationFrame(step);
+      } else {
+        stopUvScanAnim();
+      }
+    };
+    state.uvScanAnim = requestAnimationFrame(step);
+  });
+
+  // 1-Click Scale Presets (updates scaleRef + live-rescales loaded Forge/Blender mesh)
+  $('quickScaleRow')?.addEventListener('click', (e) => {
+    const btn = /** @type {HTMLElement} */ (e.target).closest('button[data-scale-mm]');
+    if (!btn) return;
+    const mm = Number(btn.getAttribute('data-scale-mm'));
+    if (!(mm > 0)) return;
+    $('scaleRef').value = `${mm} mm longest side`;
+    metaChange();
+    $('quickScaleRow')
+      ?.querySelectorAll('button[data-scale-mm]')
+      .forEach((b) => b.classList.toggle('active', b === btn));
+    if (state.forgeMesh) {
+      state.meshTransform.targetMm = mm;
+      render();
+      viewport?.fit(state.result?.bbox);
+    }
+  });
+
+  // 1-Click Starter Briefs (zero-friction onboarding across Blender CAD & Hunyuan3D Sculpt)
+  $('starterPromptRow')?.addEventListener('click', (e) => {
+    const btn = /** @type {HTMLElement} */ (e.target).closest('button[data-starter]');
+    if (!btn) return;
+    const key = btn.getAttribute('data-starter') || '';
+    const starter = STARTER_BRIEFS[key];
+    if (!starter) return;
+    state.lastBlenderCode = null;
+    setMode(starter.mode);
+    const cadSel = /** @type {HTMLSelectElement | null} */ ($('cadPresetSelect'));
+    if (cadSel) cadSel.value = starter.presetKey || '';
+    state.project.name = starter.name;
+    state.project.scaleRef = starter.scaleRef;
+    state.project.brief = starter.brief;
+    $('projectName').value = starter.name;
+    $('scaleRef').value = starter.scaleRef;
+    $('brief').value = starter.brief;
+    metaChange();
+    $('starterPromptRow')
+      ?.querySelectorAll('button[data-starter]')
+      .forEach((b) => b.classList.toggle('active', b === btn));
+    $('quickScaleRow')
+      ?.querySelectorAll('button[data-scale-mm]')
+      .forEach((b) =>
+        b.classList.toggle('active', Number(b.getAttribute('data-scale-mm')) === starter.scaleMm),
+      );
+  });
+
+  // Non-Destructive Build-Plate Orientation Deck (exports directly into STL)
+  $('orientDeck')?.addEventListener('click', (e) => {
+    const tiltBtn = /** @type {HTMLElement} */ (e.target).closest('button[data-tilt]');
+    if (tiltBtn && state.forgeMesh) {
+      state.meshTransform.tiltDeg = Number(tiltBtn.getAttribute('data-tilt') || 0);
+      $('orientDeck')
+        ?.querySelectorAll('button[data-tilt]')
+        .forEach((b) => b.classList.toggle('active', b === tiltBtn));
+      render();
+      viewport?.fit(state.result?.bbox);
+    }
+  });
+  $('rotZ90Btn')?.addEventListener('click', () => {
+    if (!state.forgeMesh) return;
+    state.meshTransform.rotZDeg = (state.meshTransform.rotZDeg + 90) % 360;
+    $('rotZ90Btn')?.classList.toggle('active', state.meshTransform.rotZDeg !== 0);
+    render();
+    viewport?.fit(state.result?.bbox);
+  });
   $('newProjectBtn').addEventListener('click', () =>
     requestSwitch(async () => installProject(newProject())),
   );

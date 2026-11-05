@@ -563,6 +563,7 @@
   }
   #peelSparkline {
     flex: 1;
+    min-width: 0;
     height: 24px;
     width: 100%;
     display: block;
@@ -570,10 +571,10 @@
     background: color-mix(in srgb, var(--bg) 65%, transparent);
   }
   #peelPeakBadge {
+    flex-shrink: 0;
     font: 600 10.5px var(--font-num);
     color: var(--muted);
     white-space: nowrap;
-    min-width: 175px;
     text-align: right;
   }
   .uv-ctrl-row {

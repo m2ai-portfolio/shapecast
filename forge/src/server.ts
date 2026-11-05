@@ -134,7 +134,7 @@ function listVaultStls(outDir: string) {
         f.toLowerCase().includes('blender') ||
         f.toLowerCase().includes('isd') ||
         f.toLowerCase().includes('turret') ||
-        pyScripts.some((p) => slug.length >= 4 && p.includes(slug));
+        (triangles < 50_000 && pyScripts.some((p) => slug.length >= 4 && p.includes(slug)));
       items.push({
         filename: f,
         label: formatVaultLabel(f) || f,

@@ -435,29 +435,35 @@ export function transformMeshTriangles(
   const cx = Math.cos(radX),
     sx = Math.sin(radX);
 
-  // Measure raw longest horizontal/overall span first if targetMm rescaling is requested
+  // Measure raw bounds for optional rescaling and smart long-axis MSLA peel tilt
+  let rMinX = Infinity,
+    rMinY = Infinity,
+    rMinZ = Infinity;
+  let rMaxX = -Infinity,
+    rMaxY = -Infinity,
+    rMaxZ = -Infinity;
+  for (let i = 0; i < n; i += 3) {
+    const x = rawTris[i],
+      y = rawTris[i + 1],
+      z = rawTris[i + 2];
+    if (x < rMinX) rMinX = x;
+    if (x > rMaxX) rMaxX = x;
+    if (y < rMinY) rMinY = y;
+    if (y > rMaxY) rMaxY = y;
+    if (z < rMinZ) rMinZ = z;
+    if (z > rMaxZ) rMaxZ = z;
+  }
+
   let scaleFactor = 1;
   if (targetMm && targetMm > 0) {
-    let rMinX = Infinity,
-      rMinY = Infinity,
-      rMinZ = Infinity;
-    let rMaxX = -Infinity,
-      rMaxY = -Infinity,
-      rMaxZ = -Infinity;
-    for (let i = 0; i < n; i += 3) {
-      const x = rawTris[i],
-        y = rawTris[i + 1],
-        z = rawTris[i + 2];
-      if (x < rMinX) rMinX = x;
-      if (x > rMaxX) rMaxX = x;
-      if (y < rMinY) rMinY = y;
-      if (y > rMaxY) rMaxY = y;
-      if (z < rMinZ) rMinZ = z;
-      if (z > rMaxZ) rMaxZ = z;
-    }
     const maxSpan = Math.max(rMaxX - rMinX, rMaxY - rMinY, rMaxZ - rMinZ, 1e-6);
     scaleFactor = targetMm / maxSpan;
   }
+  const rawSpanX = rMaxX - rMinX;
+  const rawSpanY = rMaxY - rMinY;
+  const rotSpanX = Math.abs(rawSpanX * cz) + Math.abs(rawSpanY * sz);
+  const rotSpanY = Math.abs(rawSpanX * sz) + Math.abs(rawSpanY * cz);
+  const pitchAlongX = rotSpanX > rotSpanY * 1.05;
 
   let minX = Infinity,
     minY = Infinity,
@@ -474,10 +480,10 @@ export function transformMeshTriangles(
     const x1 = x0 * cz - y0 * sz;
     const y1 = x0 * sz + y0 * cz;
     const z1 = z0;
-    // 2. Tilt about X (resin peel-force angle)
-    const x2 = x1;
-    const y2 = y1 * cx - z1 * sx;
-    const z2 = y1 * sx + z1 * cx;
+    // 2. Tilt longest horizontal axis upward to minimize FEP cross-sectional suction
+    const x2 = pitchAlongX ? x1 * cx - z1 * sx : x1;
+    const y2 = pitchAlongX ? y1 : y1 * cx - z1 * sx;
+    const z2 = (pitchAlongX ? x1 : y1) * sx + z1 * cx;
 
     out[i] = x2;
     out[i + 1] = y2;

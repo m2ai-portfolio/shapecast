@@ -229,7 +229,7 @@ function drawPeelSparkline(ratio = 1) {
     const curBin = Math.max(0, Math.min(bins - 1, Math.floor(ratio * (bins - 1))));
     const sliceArea = Math.round(areasMm2[curBin]);
     if (badge) {
-      badge.textContent = `SLICE ${sliceArea.toLocaleString()} mm² • PEAK ${Math.round(peakMm2).toLocaleString()} mm²`;
+      badge.textContent = `SLICE ${sliceArea.toLocaleString()} / PEAK ${Math.round(peakMm2).toLocaleString()} mm²`;
       badge.style.color = 'var(--uv-bright)';
     }
   } else if (badge) {

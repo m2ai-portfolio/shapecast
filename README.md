@@ -1,26 +1,71 @@
-# ShapeCast
+# ShapeCast Studio
 
-A Claude live artifact that turns photos, sketches or a typed brief into an editable,
-primitive-based 3D model and exports a Chitubox-ready STL (inside a zip) sized for the
-Elegoo Saturn 3 (12K). Modelled on Claude's "turns graphite into gravity" demo: read the
-object, fix scale from a known reference, stand it up as blocks, iterate.
+![ShapeCast portfolio cover: iterate from a design brief to an inspectable 3D print candidate](docs/portfolio-hero.png)
 
-- Spec: `docs/superpowers/specs/2026-10-03-shapecast-design.md` (v6, Codex checkmate reviewed)
-- Plan: `docs/superpowers/plans/2026-10-03-shapecast.md`
-- Published artifact: see `docs/acceptance/` (URL recorded at publish time)
+A reference image is not yet a printable object. ShapeCast explores the steps between an idea and a resin-print candidate: describe the shape, establish scale, inspect the model, revise parts and export geometry for slicing.
 
-## Build and test
+The repository contains two related implementations: a browser editor originally built for the Claude artifact runtime, and a separate Mesh Forge service for generated meshes and Blender processing. Its practical value is the iteration workflow and explicit geometry checks. An exported STL is a candidate for slicer review, not proof of a successful physical print.
+
+## A recorded editor view
+
+![Historical ShapeCast local preview showing the parts table, dimensions and primitive model on the printer plate](docs/acceptance/2026-10-03-local-preview.png)
+
+This is the checked-in local preview from 3 October 2026. Its visible notice states that Claude is unavailable; it demonstrates the editor layout and example geometry, not successful live generation.
+
+## What is here
+
+- An editable primitive-model workflow with a Three.js viewport, dimensions, part checks and a Saturn 3 export bundle.
+- Model schema validation, triangle and byte limits, manifold checks and printer-volume checks.
+- A `forge/` TypeScript service with MCP/HTTP interfaces, authentication, jobs, ComfyUI workflow files and a Blender post-processing script.
+- Historical acceptance records that distinguish a brief-only artifact build from blocked image capabilities and partial cross-device validation.
+
+## Build and inspect the editor
+
+Use Node.js and npm. The repository does not declare a Node engine; choose a version compatible with the checked-in dependency lockfile.
 
 ```bash
-npm install
-npm run format && npm run typecheck && npm test && npm run lint
-npm run build      # inlines src/*.js into src/page.html -> index.html
-npm run fixture    # writes tests/fixtures/chitubox-acceptance.zip
+git clone https://github.com/m2ai-portfolio/shapecast
+cd shapecast
+npm ci
+npm run typecheck
+npm test
+npm run lint
+npm run build
+npm run fixture
 ```
 
-`index.html` is the single file the Artifact tool publishes. Scripts load only from cdnjs
-(Three.js 0.160.0 UMD, JSZip 3.10.1). Runtime capabilities: `sample` (Claude vision),
-`downloads` (zip export), `db` + `assets` + `user` (private per-viewer projects).
+The build inlines `src/*.js` into `src/page.html` and writes `index.html`. The fixture command produces `tests/fixtures/chitubox-acceptance.zip`. Neither command establishes that a live model generation or print succeeded.
+
+Open the built HTML in a browser to inspect the interface. Generation, persistence and downloads depend on the selected runtime capabilities or a configured Forge connection. A plain HTML preview does not reproduce all the artifact platform's `sample`, `downloads`, `db`, `assets` and `user` capabilities. Some frontend libraries load from a CDN.
+
+## First walkthrough
+
+1. Start with the generated fixture ZIP and inspect its STL files in your slicer. Check scale, build-volume fit, overlap layers and orientation before considering a print.
+2. Review the editor's parts table and geometry checks. In a configured runtime, enter a simple brief with an explicit reference dimension, inspect the result, change a dimension and review the updated checks.
+3. Export only after the geometry checks pass and the runtime provides downloads. Open the resulting ZIP in your slicer and independently assess supports, hollowing and resin-print suitability.
+4. Compare your results with [the dated acceptance record](docs/acceptance/2026-10-03-publish.md). Its October artifact test could build from text, but photo input was blocked by that account's runtime. Do not treat a selected image thumbnail as proof of photo-to-model generation.
+
+## Optional Mesh Forge development
+
+Forge has its own dependencies and build. From the repository root:
+
+```bash
+cd forge
+npm ci
+npm run build
+npm run typecheck
+npm test
+```
+
+Before starting it, inspect [the server entry point](forge/src/server.ts) and configure `FORGE_PUBLIC_URL`, `FORGE_CLIENT_ID`, `FORGE_CLIENT_SECRET` and `FORGE_OWNER_PASSPHRASE`. Supply values through your existing secure environment; on ProBook load `~/.env.shared` first. Set `FORGE_COMFY_URL` to your own ComfyUI service rather than relying on the author's LAN default. `FORGE_HOST` and `FORGE_PORT` control the listener; OAuth state is stored under `~/.local/state/shapecast-forge/`.
+
+`npm start` in `forge/` runs the built server. Generated-mesh workflows additionally depend on a suitable GPU host, the models and nodes referenced in `forge/workflows/`, and Blender compatible with the checked-in processing script. Inspect these prerequisites before running a generation. Building the service alone does not install those components or configure a provider.
+
+## Verification and limits
+
+The test suite covers geometry, validation, lifecycle and other code behavior. The acceptance log records a historical slicer check and partial cross-device save/reopen evidence. It does not establish arbitrary object accuracy, photo support on every runtime, dependable generated-mesh completion or a physical print.
+
+The published artifact referenced in the acceptance log was private. Use the public source and fixtures for review rather than assuming that old artifact link is publicly accessible.
 
 ## Layout
 
